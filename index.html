@@ -48,12 +48,21 @@ input,select,textarea{font-family:inherit;}
 .brand{
   padding:22px 20px 16px 20px;
   border-bottom:1px solid rgba(239,233,216,0.15);
+  display:flex; align-items:flex-start; justify-content:space-between; gap:8px;
 }
+.brand .brand-text{min-width:0; flex:1;}
 .brand .mark{
   font-family:'Zilla Slab',serif; font-weight:700; font-size:22px;
   color:#EFE9D8; letter-spacing:0.5px;
 }
 .brand .sub{font-size:11px; color:var(--gold-light); letter-spacing:1.5px; text-transform:uppercase; margin-top:2px;}
+.sidebar-close{
+  display:none; background:rgba(239,233,216,0.12); border:none; color:#EFE9D8;
+  width:34px; height:34px; border-radius:8px; font-size:20px; line-height:1; flex-shrink:0;
+  align-items:center; justify-content:center;
+}
+.sidebar-close:hover{ background:rgba(239,233,216,0.22); }
+@media (max-width:860px){ .sidebar-close{ display:inline-flex; } }
 
 .navlist{list-style:none; margin:0; padding:10px 0; flex:1; overflow-y:auto;}
 .navlist li{margin:2px 10px;}
@@ -268,13 +277,16 @@ td.num, th.num{text-align:right;}
 }
 
 @media (max-width: 860px){
-  .sidebar{position:fixed; left:-220px; z-index:50; transition:left .2s ease; box-shadow:0 0 0 9999px rgba(0,0,0,0);}
+  .sidebar{position:fixed; left:-240px; z-index:50; transition:left .2s ease; width:240px; box-shadow:0 0 0 9999px rgba(0,0,0,0);}
   .sidebar.open{left:0; box-shadow:8px 0 24px rgba(0,0,0,0.25);}
   .pos-grid{grid-template-columns:1fr;}
   .cart-panel{position:static;}
   .content{padding:14px;}
   .topbar{padding:12px 14px; flex-wrap:wrap; row-gap:8px;}
   .form-grid{grid-template-columns:1fr;}
+  /* Prefer single-column cards on tablet/phone */
+  .stat-grid{ grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+  .dash-split{ grid-template-columns:1fr; }
 }
 
 /* Overlay behind the sidebar when open on mobile, tap to close */
@@ -414,11 +426,27 @@ body.lang-ur .field label{ text-align:right; }
 (function(){
 "use strict";
 
-const CATEGORIES = ["General","Groceries","Beverages","Snacks","Dairy","Household","Electronics","Stationery","Other"];
-const EXPENSE_CATS = ["Rent","Electricity","Staff Salary","Supplies","Other"];
+/* Default product categories — good for general shops + computer/IT accessories.
+   Shopkeeper can add/remove their own from the Categories screen. */
+const DEFAULT_CATEGORIES = [
+  "General","Electronics","Computer Accessories","Laptops","Mobile Accessories",
+  "Cables & Adapters","Storage","Networking","Stationery","Household","Other"
+];
+const DEFAULT_EXPENSE_CATS = ["Rent","Electricity","Staff Salary","Supplies","Transport","Other"];
 const LOW_STOCK_THRESHOLD = 5;
 const CURRENCY = "Rs";
 const SHOP_NAME = "Barkat Traders";
+
+function getCategories(){
+  const list = (state.settings && Array.isArray(state.settings.categories) && state.settings.categories.length)
+    ? state.settings.categories : DEFAULT_CATEGORIES;
+  return list.slice();
+}
+function getExpenseCats(){
+  const list = (state.settings && Array.isArray(state.settings.expenseCategories) && state.settings.expenseCategories.length)
+    ? state.settings.expenseCategories : DEFAULT_EXPENSE_CATS;
+  return list.slice();
+}
 
 // ---------------------------------------------------------------
 // CLOUD SYNC — hardcoded so the shopkeeper never has to type a URL.
@@ -443,9 +471,14 @@ const I18N = {
   en: {
     brand_sub: SHOP_NAME,
     nav_dashboard:"Dashboard", nav_products:"Products", nav_pos:"POS", nav_inventory:"Inventory",
-    nav_customers:"Customers", nav_expenses:"Expenses", nav_reports:"Reports",
+    nav_customers:"Customers", nav_expenses:"Expenses", nav_reports:"Reports", nav_categories:"Categories",
     title_dashboard:"Dashboard", title_products:"Products", title_pos:"Point of Sale", title_inventory:"Inventory",
-    title_customers:"Customers", title_expenses:"Expenses", title_reports:"Reports",
+    title_customers:"Customers", title_expenses:"Expenses", title_reports:"Reports", title_categories:"Categories",
+    categories_title:"Product Categories", categories_sub:"Add your own categories (e.g. Mouse, Keyboard, SSD)",
+    add_category:"+ Add Category", f_category_name:"Category name", no_categories:"No categories yet.",
+    category_added:"Category added", category_deleted:"Category deleted", category_exists:"This category already exists",
+    expense_cats_title:"Expense Categories",
+    confirm_del_category:"Delete this category? Products using it will keep the old name.",
     stat_sales_today:"Sales Today", stat_orders_today:"Orders Today", stat_expenses_today:"Expenses Today", stat_profit_today:"Profit Today",
     sub_sales_today:"Total value of everything sold today",
     sub_orders_today:"How many separate sales/receipts today",
@@ -506,9 +539,14 @@ const I18N = {
   ur: {
     brand_sub: SHOP_NAME,
     nav_dashboard:"ڈیش بورڈ", nav_products:"مصنوعات", nav_pos:"بل کاؤنٹر", nav_inventory:"اسٹاک",
-    nav_customers:"گاہک", nav_expenses:"اخراجات", nav_reports:"رپورٹس",
+    nav_customers:"گاہک", nav_expenses:"اخراجات", nav_reports:"رپورٹس", nav_categories:"اقسام",
     title_dashboard:"ڈیش بورڈ", title_products:"مصنوعات", title_pos:"بل کاؤنٹر", title_inventory:"اسٹاک",
-    title_customers:"گاہک", title_expenses:"اخراجات", title_reports:"رپورٹس",
+    title_customers:"گاہک", title_expenses:"اخراجات", title_reports:"رپورٹس", title_categories:"اقسام",
+    categories_title:"پروڈکٹ کی اقسام", categories_sub:"اپنی اقسام شامل کریں (جیسے ماؤس، کی بورڈ، ایس ایس ڈی)",
+    add_category:"+ قسم شامل کریں", f_category_name:"قسم کا نام", no_categories:"ابھی کوئی قسم نہیں۔",
+    category_added:"قسم شامل ہو گئی", category_deleted:"قسم حذف ہو گئی", category_exists:"یہ قسم پہلے سے موجود ہے",
+    expense_cats_title:"اخراجات کی اقسام",
+    confirm_del_category:"یہ قسم حذف کریں؟ اس قسم والی پروڈکٹس پر پرانا نام رہے گا۔",
     stat_sales_today:"آج کی فروخت", stat_orders_today:"آج کے آرڈرز", stat_expenses_today:"آج کے اخراجات", stat_profit_today:"آج کا منافع",
     sub_sales_today:"آج جتنا مال بکا اس کی کل مالیت",
     sub_orders_today:"آج کتنی الگ الگ سیل / رسیدیں بنیں",
@@ -603,6 +641,12 @@ async function loadData(){
   if(!state.sales) state.sales = [];
   if(!state.expenses) state.expenses = [];
   if(!state.settings) state.settings = { lang: 'en' };
+  if(!Array.isArray(state.settings.categories) || !state.settings.categories.length){
+    state.settings.categories = DEFAULT_CATEGORIES.slice();
+  }
+  if(!Array.isArray(state.settings.expenseCategories) || !state.settings.expenseCategories.length){
+    state.settings.expenseCategories = DEFAULT_EXPENSE_CATS.slice();
+  }
   lang = state.settings.lang || 'en';
   dataLoaded = true;
 }
@@ -643,7 +687,7 @@ function showToast(msg){
 
 // ---------- Icons (simple text glyphs, keeps it dependency-free) ----------
 const ICONS = {
-  dashboard:"◆", products:"▢", pos:"⌘", inventory:"▤", customers:"◍", expenses:"—", reports:"▲", receipts:"✦"
+  dashboard:"◆", products:"▢", pos:"⌘", inventory:"▤", customers:"◍", expenses:"—", reports:"▲", categories:"☰", receipts:"✦"
 };
 
 // ================= LOGIN =================
@@ -711,19 +755,29 @@ function render(){
   app.innerHTML = `
     <div class="sidebar" id="sidebar">
       <div class="brand">
-        <div class="mark">Khata</div>
-        <div class="sub">${esc(SHOP_NAME)}</div>
+        <div class="brand-text">
+          <div class="mark">Khata</div>
+          <div class="sub">${esc(SHOP_NAME)}</div>
+        </div>
+        <button type="button" class="sidebar-close" id="sidebarClose" aria-label="Close menu">×</button>
       </div>
       <ul class="navlist">
         ${navItem('dashboard')}
-        ${navItem('products')}
         ${navItem('pos')}
+        ${navItem('products')}
+        ${navItem('categories')}
         ${navItem('inventory')}
         ${navItem('customers')}
         ${navItem('expenses')}
         ${navItem('reports')}
       </ul>
       <div class="sidebar-foot">
+        <div class="sync-status" id="syncStatusRow">
+          <span class="sync-dot ${syncDotClass()}"></span>
+          <span id="syncStatusText">${syncStatusLabel()}</span>
+        </div>
+        <button type="button" class="logout-btn" id="btnCloudSync" style="margin-top:10px;">${t('cloud_backup')}</button>
+        <button type="button" class="logout-btn" id="btnBackup" style="margin-top:6px;">${t('backup_restore')}</button>
         <button id="logoutBtn" class="logout-btn">${lang==='ur'?'⏻ لاگ آؤٹ':'⏻ Logout'}</button>
         <input type="file" id="restoreFileInput" accept="application/json" style="display:none;">
       </div>
@@ -746,15 +800,22 @@ function render(){
       <div class="content" id="content"></div>
     </div>
   `;
+  function closeSidebar(){
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarOverlay').classList.remove('show');
+  }
   document.getElementById('menuToggle').onclick = ()=>{
     document.getElementById('sidebar').classList.toggle('open');
     document.getElementById('sidebarOverlay').classList.toggle('show');
   };
-  document.getElementById('sidebarOverlay').onclick = ()=>{
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebarOverlay').classList.remove('show');
-  };
+  document.getElementById('sidebarOverlay').onclick = closeSidebar;
+  const closeBtn = document.getElementById('sidebarClose');
+  if(closeBtn) closeBtn.onclick = closeSidebar;
   document.getElementById('logoutBtn').onclick = logout;
+  const cloudBtn = document.getElementById('btnCloudSync');
+  if(cloudBtn) cloudBtn.onclick = ()=>{ closeSidebar(); openCloudSyncModal(); };
+  const backupBtn = document.getElementById('btnBackup');
+  if(backupBtn) backupBtn.onclick = ()=>{ closeSidebar(); openBackupModal(); };
   document.querySelectorAll('#langToggle [data-lang]').forEach(b=> b.onclick = ()=>{ lang = b.dataset.lang; state.settings.lang = lang; saveData(); render(); });
   renderContent();
 }
@@ -775,6 +836,7 @@ function renderContent(){
   else if(view==='customers') c.innerHTML = viewCustomers();
   else if(view==='expenses') c.innerHTML = viewExpenses();
   else if(view==='reports') c.innerHTML = viewReports();
+  else if(view==='categories') c.innerHTML = viewCategories();
   attachContentHandlers();
 }
 
@@ -921,7 +983,7 @@ function viewProducts(){
           <div class="search-bar" style="margin-bottom:0;"><input id="prodSearch" placeholder="${t('search_products')}" value="${esc(productSearch)}"></div>
           <select id="prodCatFilter" style="padding:9px 11px; border:1px solid var(--border); border-radius:7px;">
             <option value="">${t('all_categories')}</option>
-            ${CATEGORIES.map(c=>`<option value="${c}" ${productFilterCat===c?'selected':''}>${c}</option>`).join('')}
+            ${getCategories().map(c=>`<option value="${esc(c)}" ${productFilterCat===c?'selected':''}>${esc(c)}</option>`).join('')}
           </select>
         </div>
         ${list.length===0 ? `<div class="empty"><div class="big">▢</div>${t('no_products')}</div>` : `
@@ -943,15 +1005,16 @@ function viewProducts(){
 }
 
 function productFormModal(product){
-  const p = product || {name:'',category:CATEGORIES[0],cost:'',price:'',stock:''};
+  const cats = getCategories();
+  const p = product || {name:'',category:cats[0]||'General',cost:'',price:'',stock:''};
   return `
   <div class="modal-backdrop" id="modalBackdrop">
     <div class="modal">
       <div class="modal-head"><h3>${product?t('modal_edit_product'):t('modal_add_product')}</h3><button class="modal-close" id="modalClose">×</button></div>
       <div class="modal-body">
         <div class="form-grid">
-          <div class="field full"><label>${t('f_product_name')}</label><input id="f_name" value="${esc(p.name)}" placeholder="e.g. Lays Chips 40g"></div>
-          <div class="field"><label>${t('f_category')}</label><select id="f_category">${CATEGORIES.map(c=>`<option ${p.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+          <div class="field full"><label>${t('f_product_name')}</label><input id="f_name" value="${esc(p.name)}" placeholder="e.g. Logitech Mouse M185"></div>
+          <div class="field"><label>${t('f_category')}</label><select id="f_category">${cats.map(c=>`<option ${p.category===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
           <div class="field"><label>${t('f_stock')}</label><input id="f_stock" type="number" min="0" value="${p.stock}" placeholder="0"></div>
           <div class="field"><label>${t('f_cost_price')} (${CURRENCY})</label><input id="f_cost" type="number" min="0" step="0.01" value="${p.cost}" placeholder="0.00"></div>
           <div class="field"><label>${t('f_sell_price')} (${CURRENCY})</label><input id="f_price" type="number" min="0" step="0.01" value="${p.price}" placeholder="0.00"></div>
@@ -960,6 +1023,70 @@ function productFormModal(product){
       <div class="modal-foot">
         <button class="btn outline" id="modalCancel">${t('cancel')}</button>
         <button class="btn gold" id="modalSave">${product?t('save_changes'):t('add_product_btn')}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ================= CATEGORIES =================
+function viewCategories(){
+  const cats = getCategories();
+  const expCats = getExpenseCats();
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>${t('categories_title')}</h2>
+        <div class="panel-sub">${t('categories_sub')}</div>
+      </div>
+      <button class="btn gold" id="addCategoryBtn">${t('add_category')}</button>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      ${cats.length===0 ? `<div class="empty"><div class="big">☰</div>${t('no_categories')}</div>` : `
+      <table><thead><tr><th>${t('th_name')}</th><th class="num">${t('th_product')}</th><th></th></tr></thead>
+      <tbody>${cats.map(c=>{
+        const count = state.products.filter(p=>p.category===c).length;
+        return `<tr>
+          <td>${esc(c)}</td>
+          <td class="num">${count}</td>
+          <td><div class="row-actions" style="justify-content:flex-end;">
+            <button class="icon-btn del" data-del-category="${esc(c)}">${t('delete')}</button>
+          </div></td>
+        </tr>`;
+      }).join('')}</tbody></table>`}
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>${t('expense_cats_title')}</h2>
+      </div>
+      <button class="btn gold" id="addExpenseCatBtn">${t('add_category')}</button>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>${t('th_name')}</th><th></th></tr></thead>
+      <tbody>${expCats.map(c=>`<tr>
+        <td>${esc(c)}</td>
+        <td><div class="row-actions" style="justify-content:flex-end;">
+          <button class="icon-btn del" data-del-exp-category="${esc(c)}">${t('delete')}</button>
+        </div></td>
+      </tr>`).join('')}</tbody></table>
+    </div>
+  </div>
+  `;
+}
+
+function categoryFormModal(isExpense){
+  return `
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="modal-head"><h3>${t('add_category')}</h3><button class="modal-close" id="modalClose">×</button></div>
+      <div class="modal-body">
+        <div class="field full"><label>${t('f_category_name')}</label><input id="f_catname" placeholder="e.g. Mouse / Keyboard" autofocus></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn outline" id="modalCancel">${t('cancel')}</button>
+        <button class="btn gold" id="modalSave" data-expense-cat="${isExpense?'1':'0'}">${t('add_category')}</button>
       </div>
     </div>
   </div>`;
@@ -1146,7 +1273,7 @@ function viewExpenses(){
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
         <select id="expCatFilter" style="padding:9px 11px; border:1px solid var(--border); border-radius:7px;">
           <option value="">${t('all_categories')}</option>
-          ${EXPENSE_CATS.map(c=>`<option value="${c}" ${expenseFilterCat===c?'selected':''}>${c}</option>`).join('')}
+          ${getExpenseCats().map(c=>`<option value="${esc(c)}" ${expenseFilterCat===c?'selected':''}>${esc(c)}</option>`).join('')}
         </select>
         <div style="margin-left:auto; font-size:13.5px; color:var(--muted);">${t('total_label')}: <span class="amount" style="color:var(--brick); font-weight:700;">${fmt(total)}</span></div>
       </div>
@@ -1171,7 +1298,7 @@ function expenseFormModal(){
       <div class="modal-head"><h3>${t('modal_add_expense')}</h3><button class="modal-close" id="modalClose">×</button></div>
       <div class="modal-body">
         <div class="form-grid">
-          <div class="field"><label>${t('f_category')}</label><select id="f_ecategory">${EXPENSE_CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+          <div class="field"><label>${t('f_category')}</label><select id="f_ecategory">${getExpenseCats().map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
           <div class="field"><label>${t('f_amount')} (${CURRENCY})</label><input id="f_eamount" type="number" min="0" step="0.01" placeholder="0.00"></div>
           <div class="field full"><label>${t('f_note_optional')}</label><input id="f_enote" placeholder="e.g. August rent"></div>
           <div class="field full"><label>${t('f_date')}</label><input id="f_edate" type="date" value="${todayStr()}"></div>
@@ -1373,7 +1500,11 @@ async function pushToSheet(url){
       customers: state.customers,
       sales: state.sales,
       expenses: state.expenses,
-      settings: { lang: (state.settings && state.settings.lang) || 'en' }
+      settings: {
+        lang: (state.settings && state.settings.lang) || 'en',
+        categories: getCategories(),
+        expenseCategories: getExpenseCats()
+      }
     };
     const res = await fetch(url, {
       method: 'POST',
@@ -1392,12 +1523,19 @@ async function pullFromSheet(url){
     const data = await res.json();
     if(data && data.success){
       const keepLang = (state.settings && state.settings.lang) || lang;
+      const keepCats = getCategories();
+      const keepExpCats = getExpenseCats();
+      const incoming = data.settings || {};
       state = {
         products: Array.isArray(data.products) ? data.products : [],
         customers: Array.isArray(data.customers) ? data.customers : [],
         sales: Array.isArray(data.sales) ? data.sales : [],
         expenses: Array.isArray(data.expenses) ? data.expenses : [],
-        settings: { lang: (data.settings && data.settings.lang) || keepLang }
+        settings: {
+          lang: incoming.lang || keepLang,
+          categories: Array.isArray(incoming.categories) && incoming.categories.length ? incoming.categories : keepCats,
+          expenseCategories: Array.isArray(incoming.expenseCategories) && incoming.expenseCategories.length ? incoming.expenseCategories : keepExpCats
+        }
       };
       return true;
     }
@@ -1625,6 +1763,43 @@ function attachContentHandlers(){
     });
     document.querySelectorAll('[data-del-product]').forEach(b=> b.onclick=()=>{
       if(confirm('Delete this product?')){ state.products = state.products.filter(p=>p.id!==b.dataset.delProduct); saveData(); renderContent(); showToast('Product deleted'); }
+    });
+  }
+
+  if(view==='categories'){
+    document.getElementById('addCategoryBtn').onclick = ()=>{
+      openModal(categoryFormModal(false));
+      document.getElementById('modalSave').onclick = ()=>{
+        const name = document.getElementById('f_catname').value.trim();
+        if(!name){ showToast(lang==='ur'?'نام لکھیں':'Enter a name'); return; }
+        const cats = getCategories();
+        if(cats.some(c=>c.toLowerCase()===name.toLowerCase())){ showToast(t('category_exists')); return; }
+        state.settings.categories = cats.concat([name]);
+        saveData(); closeModal(); renderContent(); showToast(t('category_added'));
+      };
+    };
+    document.getElementById('addExpenseCatBtn').onclick = ()=>{
+      openModal(categoryFormModal(true));
+      document.getElementById('modalSave').onclick = ()=>{
+        const name = document.getElementById('f_catname').value.trim();
+        if(!name){ showToast(lang==='ur'?'نام لکھیں':'Enter a name'); return; }
+        const cats = getExpenseCats();
+        if(cats.some(c=>c.toLowerCase()===name.toLowerCase())){ showToast(t('category_exists')); return; }
+        state.settings.expenseCategories = cats.concat([name]);
+        saveData(); closeModal(); renderContent(); showToast(t('category_added'));
+      };
+    };
+    document.querySelectorAll('[data-del-category]').forEach(b=> b.onclick=()=>{
+      if(!confirm(t('confirm_del_category'))) return;
+      const name = b.dataset.delCategory;
+      state.settings.categories = getCategories().filter(c=>c!==name);
+      saveData(); renderContent(); showToast(t('category_deleted'));
+    });
+    document.querySelectorAll('[data-del-exp-category]').forEach(b=> b.onclick=()=>{
+      if(!confirm(t('confirm_del_category'))) return;
+      const name = b.dataset.delExpCategory;
+      state.settings.expenseCategories = getExpenseCats().filter(c=>c!==name);
+      saveData(); renderContent(); showToast(t('category_deleted'));
     });
   }
 
