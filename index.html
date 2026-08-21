@@ -219,12 +219,6 @@ td.num, th.num{text-align:right;}
 .receipt .ritem{display:flex; justify-content:space-between; margin:4px 0;}
 .receipt .ritem .n{max-width:180px;}
 .receipt .rtotal{font-weight:700; font-size:14px;}
-.stamp{
-  position:absolute; top:60px; right:18px; width:64px; height:64px; border-radius:50%;
-  border:2.5px solid var(--gold); color:var(--gold); display:flex; align-items:center; justify-content:center;
-  font-family:'Zilla Slab',serif; font-weight:700; font-size:11px; transform:rotate(-18deg); text-align:center; line-height:1.1;
-  opacity:0.85;
-}
 .receipt-actions{display:flex; gap:10px; justify-content:center; margin-top:6px; flex-wrap:wrap;}
 
 /* Reports */
@@ -274,16 +268,68 @@ td.num, th.num{text-align:right;}
 }
 
 @media (max-width: 860px){
-  .sidebar{position:fixed; left:-220px; z-index:50; transition:left .2s ease;}
-  .sidebar.open{left:0;}
+  .sidebar{position:fixed; left:-220px; z-index:50; transition:left .2s ease; box-shadow:0 0 0 9999px rgba(0,0,0,0);}
+  .sidebar.open{left:0; box-shadow:8px 0 24px rgba(0,0,0,0.25);}
   .pos-grid{grid-template-columns:1fr;}
   .cart-panel{position:static;}
-  .content{padding:18px;}
-  .topbar{padding:14px 16px;}
+  .content{padding:14px;}
+  .topbar{padding:12px 14px; flex-wrap:wrap; row-gap:8px;}
   .form-grid{grid-template-columns:1fr;}
 }
+
+/* Overlay behind the sidebar when open on mobile, tap to close */
+.sidebar-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:45;}
+@media (max-width:860px){ .sidebar-overlay.show{display:block;} }
+
+/* Prevent the topbar (title + date + lang toggle) from overflowing on narrow phones */
+@media (max-width:640px){
+  .topbar .date{display:none;}
+  .topbar h1{font-size:17px;}
+  .lang-toggle{margin-left:0;}
+}
+@media (max-width:400px){
+  .topbar{gap:8px;}
+}
+
 .menu-toggle{display:none; background:none; border:1px solid var(--border); border-radius:7px; padding:7px 10px; font-size:16px;}
 @media (max-width:860px){ .menu-toggle{display:inline-flex;} }
+
+/* ===== Mobile usability pass ===== */
+@media (max-width:640px){
+  /* Wrap wide tables in a horizontal scroller instead of squishing columns unreadably */
+  .panel-body{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  table{ min-width:520px; }
+
+  /* Bigger, thumb-friendly tap targets */
+  .btn{ padding:11px 16px; font-size:14px; }
+  .icon-btn{ padding:8px 11px; font-size:13px; }
+  .qty-ctrl button{ width:30px; height:30px; font-size:15px; }
+  .navlist button{ padding:13px 12px; font-size:15px; }
+  .tile{ padding:12px; }
+
+  /* Inputs at 16px+ so iOS Safari doesn't zoom in on focus */
+  .field input, .field select, .field textarea,
+  .search-bar input, .pos-search input, #prodCatFilter, #expCatFilter{ font-size:16px; }
+
+  /* Stat cards: single column, roomier */
+  .stat-grid{ grid-template-columns:1fr; }
+
+  /* Quick actions stack full-width on very small phones */
+  .quick-actions{ flex-direction:column; }
+  .quick-actions .qa-btn{ width:100%; justify-content:center; }
+
+  /* Modal fills more of the screen, no dead space at the edges */
+  .modal-backdrop{ padding:0; align-items:flex-end; }
+  .modal{ max-width:100%; width:100%; max-height:92vh; border-radius:16px 16px 0 0; }
+
+  /* Smaller receipt so it fits without horizontal scrolling */
+  .receipt{ width:88vw !important; max-width:320px; padding:20px 16px 24px 16px; }
+
+  /* Product tiles: 2 per row minimum, no overflow */
+  .product-tiles{ grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:9px; }
+
+  .search-bar input{ width:100%; }
+}
 
 /* Urdu / RTL support */
 body.lang-ur{ font-family:'Noto Nastaliq Urdu','IBM Plex Sans',sans-serif; }
@@ -682,6 +728,7 @@ function render(){
         <input type="file" id="restoreFileInput" accept="application/json" style="display:none;">
       </div>
     </div>
+    <div class="sidebar-overlay no-print" id="sidebarOverlay"></div>
     <div class="main">
       <div class="topbar">
         <div style="display:flex; align-items:center; gap:12px;">
@@ -699,7 +746,14 @@ function render(){
       <div class="content" id="content"></div>
     </div>
   `;
-  document.getElementById('menuToggle').onclick = ()=> document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('menuToggle').onclick = ()=>{
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebarOverlay').classList.toggle('show');
+  };
+  document.getElementById('sidebarOverlay').onclick = ()=>{
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarOverlay').classList.remove('show');
+  };
   document.getElementById('logoutBtn').onclick = logout;
   document.querySelectorAll('#langToggle [data-lang]').forEach(b=> b.onclick = ()=>{ lang = b.dataset.lang; state.settings.lang = lang; saveData(); render(); });
   renderContent();
@@ -767,6 +821,8 @@ function viewDashboard(){
 
     <div class="quick-actions no-print">
       <button class="qa-btn qa-primary" data-nav="pos"><span class="qa-ico">＋</span>${t('qa_new_sale')}</button>
+      <button class="qa-btn" data-nav="products"><span class="qa-ico">▢</span>${t('qa_add_product')}</button>
+      <button class="qa-btn" data-nav="expenses"><span class="qa-ico">−</span>${t('qa_add_expense')}</button>
     </div>
 
     <div class="stat-grid">
@@ -776,6 +832,7 @@ function viewDashboard(){
         <div class="sbody">
           <div class="label">${t('stat_sales_today')}</div>
           <div class="value">${fmt(salesTotal)}</div>
+          <div class="subnote">${t('sub_sales_today')}</div>
         </div>
       </div>
       <div class="stat-card">
@@ -784,6 +841,7 @@ function viewDashboard(){
         <div class="sbody">
           <div class="label">${t('stat_orders_today')}</div>
           <div class="value">${ordersCount}</div>
+          <div class="subnote">${t('sub_orders_today')}</div>
         </div>
       </div>
       <div class="stat-card warn">
@@ -792,6 +850,7 @@ function viewDashboard(){
         <div class="sbody">
           <div class="label">${t('stat_expenses_today')}</div>
           <div class="value">${fmt(todayExpenses)}</div>
+          <div class="subnote">${t('sub_expenses_today')}</div>
         </div>
       </div>
       <div class="stat-card ${profit<0?'warn':'accent'}">
@@ -800,6 +859,7 @@ function viewDashboard(){
         <div class="sbody">
           <div class="label">${t('stat_profit_today')}</div>
           <div class="value">${fmt(profit)}</div>
+          <div class="subnote">${t('sub_profit_today')}</div>
         </div>
       </div>
     </div>
@@ -1548,7 +1608,12 @@ function closeModal(){
 
 // ================= EVENT HANDLERS =================
 function attachContentHandlers(){
-  document.querySelectorAll('[data-nav]').forEach(b=> b.onclick = ()=>{ view=b.dataset.nav; document.getElementById('sidebar').classList.remove('open'); render(); });
+  document.querySelectorAll('[data-nav]').forEach(b=> b.onclick = ()=>{
+    view=b.dataset.nav;
+    document.getElementById('sidebar').classList.remove('open');
+    const ov = document.getElementById('sidebarOverlay'); if(ov) ov.classList.remove('show');
+    render();
+  });
 
   if(view==='products'){
     document.getElementById('addProductBtn').onclick = ()=>{ editingProduct=null; openModal(productFormModal(null)); bindProductForm(null); };
@@ -1746,19 +1811,31 @@ function bindReceiptActions(sale){
 
 // ================= INIT =================
 async function startApp(){
-  document.getElementById('app').innerHTML = '<div style="padding:60px; text-align:center; color:#7A7360; font-family:IBM Plex Sans,sans-serif;">Loading your shop data…</div>';
+  // Local read is fast — load it and render right away so the app never
+  // sits on a blank "Loading…" screen waiting on the network.
   await loadData();
+  render();
 
   // If a cloud sheet is configured and this device has no local data yet,
-  // pull whatever is already in the sheet automatically (first run on a new device/browser).
-  if(CLOUD_SHEET_URL && state.products.length===0 && state.customers.length===0 && state.sales.length===0 && state.expenses.length===0){
+  // pull whatever is already in the sheet in the BACKGROUND (first run on a
+  // new device/browser). Apps Script can take several seconds to respond
+  // (cold start), so this must never block the first paint of the app.
+  const isEmpty = state.products.length===0 && state.customers.length===0 && state.sales.length===0 && state.expenses.length===0;
+  if(CLOUD_SHEET_URL && isEmpty){
     syncState = 'busy';
-    const ok = await pullFromSheet(CLOUD_SHEET_URL);
-    if(ok){ syncState='ok'; state.settings.lastSynced = new Date().toISOString(); await storageSet('shopdata', JSON.stringify(state)); }
-    else{ syncState='idle'; }
+    showToast(lang==='ur' ? 'کلاؤڈ سے ڈیٹا لایا جا رہا ہے…' : 'Fetching your data from the cloud…');
+    pullFromSheet(CLOUD_SHEET_URL).then(async (ok)=>{
+      if(ok){
+        syncState='ok';
+        state.settings.lastSynced = new Date().toISOString();
+        await storageSet('shopdata', JSON.stringify(state));
+        render(); // refresh the screen now that real data has arrived
+        showToast(lang==='ur' ? 'ڈیٹا لوڈ ہو گیا' : 'Data loaded');
+      } else {
+        syncState='idle';
+      }
+    });
   }
-
-  render();
 }
 
 // toast element
