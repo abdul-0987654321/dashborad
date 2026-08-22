@@ -206,6 +206,10 @@ td.num, th.num{text-align:right;}
 .pay-options{display:flex; gap:8px; margin-bottom:12px;}
 .pay-options button{flex:1; padding:8px 6px; border-radius:7px; border:1px solid var(--border); background:var(--paper-dim); font-size:12.5px; font-weight:600; color:var(--muted);}
 .pay-options button.sel{background:var(--ink); color:#fff; border-color:var(--ink);}
+.pos-cust-divider{ text-align:center; font-size:11px; color:var(--muted); margin:2px 0 10px 0; position:relative; }
+.pos-cust-divider span{ background:var(--card); padding:0 8px; position:relative; z-index:1; }
+.pos-cust-divider::before{ content:""; position:absolute; left:0; right:0; top:50%; border-top:1px dashed var(--border); z-index:0; }
+.pos-new-cust-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
 
 /* Receipt */
 .receipt-wrap{display:flex; justify-content:center; padding:20px 0;}
@@ -274,6 +278,8 @@ td.num, th.num{text-align:right;}
   .sidebar, .topbar{display:none !important;}
   body{background:#fff;}
   .receipt-wrap{padding:0;}
+  #app{min-height:0 !important; display:block !important;}
+  .main{min-height:0 !important;}
 }
 
 @media (max-width: 860px){
@@ -341,6 +347,7 @@ td.num, th.num{text-align:right;}
   .product-tiles{ grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:9px; }
 
   .search-bar input{ width:100%; }
+  .pos-new-cust-row{ grid-template-columns:1fr; }
 }
 
 /* Urdu / RTL support */
@@ -508,7 +515,7 @@ const I18N = {
     f_product_name:"Product Name", f_category:"Category", f_stock:"Stock", f_cost_price:"Cost Price", f_sell_price:"Selling Price",
     cancel:"Cancel", save_changes:"Save Changes", add_product_btn:"Add Product",
     current_sale:"Current Sale", clear:"Clear", cart_empty:"Tap a product to add it to the sale.",
-    customer_optional:"Customer (optional)", walkin:"Walk-in Customer", discount_pct:"Discount (%)",
+    customer_optional:"Customer (optional)", walkin:"Walk-in Customer", discount_pct:"Discount (Rs)",
     payment_label:"Payment", cash:"Cash", card:"Card", credit:"Credit",
     subtotal:"Subtotal", discount:"Discount", total:"Total", generate_receipt:"Generate Receipt",
     stock_levels:"Stock Levels", stock_levels_sub:"Adjust manually for damage, returns, restock",
@@ -548,6 +555,7 @@ const I18N = {
     cloud_sync_download_confirm:"This will replace the data on this device with the data from your Google Sheet. Continue?",
     cloud_sync_last_synced:"Last synced", cloud_sync_status_idle:"Not synced yet", cloud_sync_status_ok:"Synced", cloud_sync_status_busy:"Syncing…", cloud_sync_status_err:"Sync failed",
     export_pdf:"⬇ Export PDF",
+    new_customer_name:"New customer name", new_customer_phone:"Phone number", or_new_customer:"or add a new customer",
   },
   ur: {
     brand_sub: SHOP_NAME,
@@ -576,7 +584,7 @@ const I18N = {
     f_product_name:"پروڈکٹ کا نام", f_category:"قسم", f_stock:"اسٹاک", f_cost_price:"خرید قیمت", f_sell_price:"فروخت قیمت",
     cancel:"منسوخ", save_changes:"محفوظ کریں", add_product_btn:"پروڈکٹ شامل کریں",
     current_sale:"موجودہ سیل", clear:"صاف کریں", cart_empty:"سیل میں شامل کرنے کے لیے پروڈکٹ پر ٹیپ کریں۔",
-    customer_optional:"گاہک (اختیاری)", walkin:"عام گاہک", discount_pct:"رعایت (%)",
+    customer_optional:"گاہک (اختیاری)", walkin:"عام گاہک", discount_pct:"رعایت (روپے)",
     payment_label:"ادائیگی کا طریقہ", cash:"نقد", card:"کارڈ", credit:"ادھار",
     subtotal:"ذیلی کل", discount:"رعایت", total:"کل رقم", generate_receipt:"رسید بنائیں",
     stock_levels:"اسٹاک کی مقدار", stock_levels_sub:"نقصان، واپسی یا نئے اسٹاک کے لیے دستی طور پر تبدیل کریں",
@@ -616,6 +624,7 @@ const I18N = {
     cloud_sync_download_confirm:"اس سے اس ڈیوائس کا ڈیٹا آپ کی گوگل شیٹ کے ڈیٹا سے تبدیل ہو جائے گا۔ جاری رکھیں؟",
     cloud_sync_last_synced:"آخری ہم آہنگی", cloud_sync_status_idle:"ابھی سنک نہیں ہوا", cloud_sync_status_ok:"سنک ہو گیا", cloud_sync_status_busy:"سنک ہو رہا ہے…", cloud_sync_status_err:"سنک ناکام",
     export_pdf:"⬇ پی ڈی ایف ڈاؤن لوڈ کریں",
+    new_customer_name:"نئے گاہک کا نام", new_customer_phone:"فون نمبر", or_new_customer:"یا نیا گاہک شامل کریں",
   }
 };
 function t(key){ return (I18N[lang] && I18N[lang][key] !== undefined) ? I18N[lang][key] : (I18N.en[key] || key); }
@@ -625,7 +634,7 @@ let state = { products: [], customers: [], sales: [], expenses: [] };
 let view = "dashboard";
 let cart = []; // {productId, name, price, cost, qty}
 let selectedCustomerId = "";
-let discountPct = 0;
+let discountAmt = 0;
 let payMethod = "cash";
 let lastReceipt = null;
 let productSearch = "";
@@ -830,8 +839,18 @@ function sectionTitle(){
   return t('title_'+view);
 }
 
+// Re-renders #content while preserving keyboard focus + cursor position on
+// whatever input the user is currently typing in. Without this, every
+// keystroke in a text field (discount, search boxes, etc.) rebuilds the DOM
+// and the on-screen keyboard on mobile flickers/closes because the focused
+// element gets destroyed and recreated on every character typed.
 function renderContent(){
   const c = document.getElementById('content');
+  const active = document.activeElement;
+  let focusInfo = null;
+  if(active && active.id && c.contains(active) && (active.tagName==='INPUT' || active.tagName==='TEXTAREA' || active.tagName==='SELECT')){
+    focusInfo = { id: active.id, start: active.selectionStart, end: active.selectionEnd };
+  }
   if(view==='dashboard') c.innerHTML = viewDashboard();
   else if(view==='products') c.innerHTML = viewProducts();
   else if(view==='pos') c.innerHTML = viewPOS();
@@ -841,6 +860,15 @@ function renderContent(){
   else if(view==='reports') c.innerHTML = viewReports();
   else if(view==='categories') c.innerHTML = viewCategories();
   attachContentHandlers();
+  if(focusInfo){
+    const el = document.getElementById(focusInfo.id);
+    if(el){
+      el.focus({preventScroll:true});
+      if(typeof el.setSelectionRange === 'function' && focusInfo.start!=null){
+        try{ el.setSelectionRange(focusInfo.start, focusInfo.end); }catch(e){ /* not a text-selectable input, ignore */ }
+      }
+    }
+  }
 }
 
 // ================= DASHBOARD (simplified) =================
@@ -1099,8 +1127,8 @@ function categoryFormModal(isExpense){
 function viewPOS(){
   const list = state.products.filter(p=> !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase()));
   const subtotal = cart.reduce((a,i)=>a+i.price*i.qty,0);
-  const discountAmt = subtotal * (discountPct/100);
-  const total = Math.max(0, subtotal - discountAmt);
+  const discountAmtClamped = Math.max(0, Math.min(subtotal, discountAmt));
+  const total = Math.max(0, subtotal - discountAmtClamped);
   return `
   <div class="pos-grid">
     <div>
@@ -1139,12 +1167,17 @@ function viewPOS(){
           <label>${t('customer_optional')}</label>
           <select id="posCustomer">
             <option value="">${t('walkin')}</option>
-            ${state.customers.map(c=>`<option value="${c.id}" ${selectedCustomerId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+            ${state.customers.map(c=>`<option value="${c.id}" ${selectedCustomerId===c.id?'selected':''}>${esc(c.name)}${c.phone?(' — '+esc(c.phone)):''}</option>`).join('')}
           </select>
+        </div>
+        <div class="pos-cust-divider"><span>${t('or_new_customer')}</span></div>
+        <div class="pos-new-cust-row">
+          <input id="posNewCustName" placeholder="${t('new_customer_name')}" value="${esc(window.__posNewCustName||'')}" ${selectedCustomerId?'disabled':''}>
+          <input id="posNewCustPhone" placeholder="${t('new_customer_phone')}" value="${esc(window.__posNewCustPhone||'')}" inputmode="tel" ${selectedCustomerId?'disabled':''}>
         </div>
         <div class="field">
           <label>${t('discount_pct')}</label>
-          <input id="posDiscount" type="number" min="0" max="100" value="${discountPct}">
+          <input id="posDiscount" type="number" min="0" step="0.01" value="${discountAmt || ''}" placeholder="0">
         </div>
         <label style="font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.4px;">${t('payment_label')}</label>
         <div class="pay-options">
@@ -1153,7 +1186,7 @@ function viewPOS(){
           <button data-pay="credit" class="${payMethod==='credit'?'sel':''}">${t('credit')}</button>
         </div>
         <div class="cart-line"><span>${t('subtotal')}</span><span class="amount">${fmt(subtotal)}</span></div>
-        <div class="cart-line"><span>${t('discount')}</span><span class="amount">−${fmt(discountAmt)}</span></div>
+        <div class="cart-line"><span>${t('discount')}</span><span class="amount">−${fmt(discountAmtClamped)}</span></div>
         <div class="cart-line total"><span>${t('total')}</span><span class="amount">${fmt(total)}</span></div>
         <button class="btn gold" style="width:100%; justify-content:center; padding:12px;" id="checkoutBtn" ${cart.length===0?'disabled':''}>${t('generate_receipt')}</button>
       </div>
@@ -1543,6 +1576,16 @@ function receiptText(sale){
 // content size instead of a fixed A4/Letter page with lots of blank space.
 // mode 'receipt' -> narrow thermal slip width, height auto (fits content)
 // mode 'report'  -> normal A4 portrait with small margins
+//
+// NOTE ON MOBILE: Android/iOS print dialogs are controlled by the phone's
+// OS-level print service, not just this page's CSS — some mobile browsers
+// ignore a custom @page size entirely and fall back to the phone's default
+// paper (usually Letter or A4), even though this same CSS works correctly
+// on desktop Chrome/Edge "Save as PDF". There is no reliable way to force
+// this from web content on every mobile browser. If a phone keeps forcing
+// Letter/A4, open the print dialog's "More settings" and pick "Custom" or
+// the closest small paper size manually, or use the "Download .txt" /
+// "Share via WhatsApp" buttons instead of Print on that device.
 function applyPrintPageSize(mode){
   let styleTag = document.getElementById('printPageStyle');
   if(!styleTag){
@@ -1559,6 +1602,8 @@ function applyPrintPageSize(mode){
       @media print {
         @page { size: ${w}mm ${hMm}mm; margin: 0; }
         html, body { height:auto !important; min-height:0 !important; }
+        #app { min-height:0 !important; display:block !important; }
+        .main { min-height:0 !important; }
         .content { padding:0 !important; }
         .receipt-wrap { padding:0 !important; }
         .receipt { width:${w-8}mm !important; box-shadow:none !important; }
@@ -1568,6 +1613,8 @@ function applyPrintPageSize(mode){
       @media print {
         @page { size: A4 portrait; margin: 12mm; }
         html, body { height:auto !important; min-height:0 !important; }
+        #app { min-height:0 !important; display:block !important; }
+        .main { min-height:0 !important; }
         .content { padding:0 !important; }
         .tabs, .quick-actions { display:none !important; }
         .print-report-header { display:block !important; margin-bottom:12px; }
@@ -1660,8 +1707,16 @@ function attachContentHandlers(){
     });
     document.querySelectorAll('[data-remove-cart]').forEach(b=> b.onclick=()=>{ cart = cart.filter(i=>i.productId!==b.dataset.removeCart); renderContent(); });
     const clearBtn = document.getElementById('clearCart'); if(clearBtn) clearBtn.onclick=()=>{ cart=[]; renderContent(); };
-    document.getElementById('posCustomer').onchange = e=>{ selectedCustomerId = e.target.value; };
-    document.getElementById('posDiscount').oninput = e=>{ discountPct = Math.max(0, Math.min(100, parseFloat(e.target.value)||0)); renderContent(); };
+    document.getElementById('posCustomer').onchange = e=>{
+      selectedCustomerId = e.target.value;
+      if(selectedCustomerId){ window.__posNewCustName=''; window.__posNewCustPhone=''; }
+      renderContent();
+    };
+    const newNameEl = document.getElementById('posNewCustName');
+    const newPhoneEl = document.getElementById('posNewCustPhone');
+    if(newNameEl) newNameEl.oninput = e=>{ window.__posNewCustName = e.target.value; };
+    if(newPhoneEl) newPhoneEl.oninput = e=>{ window.__posNewCustPhone = e.target.value; };
+    document.getElementById('posDiscount').oninput = e=>{ discountAmt = Math.max(0, parseFloat(e.target.value)||0); renderContent(); };
     document.querySelectorAll('[data-pay]').forEach(b=> b.onclick=()=>{ payMethod = b.dataset.pay; renderContent(); });
     const checkoutBtn = document.getElementById('checkoutBtn');
     if(checkoutBtn) checkoutBtn.onclick = checkout;
@@ -1778,17 +1833,40 @@ function changeQty(productId, delta){
   renderContent();
 }
 
+// Finds an existing customer to reuse (matched by phone, to avoid duplicate
+// records for the same person), or creates a brand new one from the quick
+// "New customer" fields on the POS screen.
+function resolveOrCreateCustomer(){
+  if(selectedCustomerId){
+    return state.customers.find(c=>c.id===selectedCustomerId) || null;
+  }
+  const name = (window.__posNewCustName||'').trim();
+  const phone = (window.__posNewCustPhone||'').trim();
+  if(!name && !phone) return null;
+  if(phone){
+    const existing = state.customers.find(c=>c.phone && c.phone.replace(/\s+/g,'')===phone.replace(/\s+/g,''));
+    if(existing){
+      if(name && existing.name!==name){ existing.name = name; } // keep name fresh if they gave a new one
+      return existing;
+    }
+  }
+  const created = {id:uid(), name: name || phone, phone, paidOff:0};
+  state.customers.push(created);
+  return created;
+}
+
 function checkout(){
   if(cart.length===0) return;
   const subtotal = cart.reduce((a,i)=>a+i.price*i.qty,0);
-  const total = Math.max(0, subtotal * (1-discountPct/100));
-  const customer = state.customers.find(c=>c.id===selectedCustomerId);
+  const discountAmtClamped = Math.max(0, Math.min(subtotal, discountAmt));
+  const total = Math.max(0, subtotal - discountAmtClamped);
+  const customer = resolveOrCreateCustomer();
   const sale = {
     id: uid(),
     date: new Date().toISOString(),
     items: cart.map(i=>({productId:i.productId, name:i.name, qty:i.qty, price:i.price, cost:i.cost})),
-    subtotal, total, discountPct, payment: payMethod,
-    customerId: selectedCustomerId || null,
+    subtotal, total, discountAmt: discountAmtClamped, payment: payMethod,
+    customerId: customer ? customer.id : null,
     customerName: customer ? customer.name : null
   };
   // decrement stock
@@ -1799,7 +1877,8 @@ function checkout(){
   state.sales.push(sale);
   saveData();
   lastReceipt = sale;
-  cart = []; discountPct = 0; payMethod = 'cash'; selectedCustomerId = '';
+  cart = []; discountAmt = 0; payMethod = 'cash'; selectedCustomerId = '';
+  window.__posNewCustName = ''; window.__posNewCustPhone = '';
   showReceiptScreen(sale);
 }
 
