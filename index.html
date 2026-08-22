@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Khata — Shop Manager</title>
+<title>Dashborad — Shop Manager</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -206,10 +206,6 @@ td.num, th.num{text-align:right;}
 .pay-options{display:flex; gap:8px; margin-bottom:12px;}
 .pay-options button{flex:1; padding:8px 6px; border-radius:7px; border:1px solid var(--border); background:var(--paper-dim); font-size:12.5px; font-weight:600; color:var(--muted);}
 .pay-options button.sel{background:var(--ink); color:#fff; border-color:var(--ink);}
-.pos-cust-divider{ text-align:center; font-size:11px; color:var(--muted); margin:2px 0 10px 0; position:relative; }
-.pos-cust-divider span{ background:var(--card); padding:0 8px; position:relative; z-index:1; }
-.pos-cust-divider::before{ content:""; position:absolute; left:0; right:0; top:50%; border-top:1px dashed var(--border); z-index:0; }
-.pos-new-cust-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
 
 /* Receipt */
 .receipt-wrap{display:flex; justify-content:center; padding:20px 0;}
@@ -278,8 +274,6 @@ td.num, th.num{text-align:right;}
   .sidebar, .topbar{display:none !important;}
   body{background:#fff;}
   .receipt-wrap{padding:0;}
-  #app{min-height:0 !important; display:block !important;}
-  .main{min-height:0 !important;}
 }
 
 @media (max-width: 860px){
@@ -347,7 +341,6 @@ td.num, th.num{text-align:right;}
   .product-tiles{ grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:9px; }
 
   .search-bar input{ width:100%; }
-  .pos-new-cust-row{ grid-template-columns:1fr; }
 }
 
 /* Urdu / RTL support */
@@ -437,6 +430,9 @@ body.lang-ur .field label{ text-align:right; }
 }
 @keyframes spin{ to{ transform:rotate(360deg); } }
 .boot-msg{ font-size:13px; color:var(--muted); }
+
+/* Off-screen slip node used only for thermal printing — see printThermalSlip() */
+#printRoot{ display:none; }
 </style>
 </head>
 <body>
@@ -470,7 +466,7 @@ function getExpenseCats(){
 
 // ---------------------------------------------------------------
 // CLOUD SYNC — hardcoded so the shopkeeper never has to type a URL.
-// This is the Apps Script Web App URL from khata-sheets-backend.gs.
+// This is the Apps Script Web App URL from Dashborad-sheets-backend.gs.
 // To change it later, just edit this one line.
 // ---------------------------------------------------------------
 const CLOUD_SHEET_URL = "https://script.google.com/macros/s/AKfycbxNHi_UQJAYRCGzZBfSZBy4dPKD8gGLsRhT7bOnKif5PIymj-0kj6bfWK5Ty5dqhz0/exec";
@@ -515,7 +511,10 @@ const I18N = {
     f_product_name:"Product Name", f_category:"Category", f_stock:"Stock", f_cost_price:"Cost Price", f_sell_price:"Selling Price",
     cancel:"Cancel", save_changes:"Save Changes", add_product_btn:"Add Product",
     current_sale:"Current Sale", clear:"Clear", cart_empty:"Tap a product to add it to the sale.",
-    customer_optional:"Customer (optional)", walkin:"Walk-in Customer", discount_pct:"Discount (Rs)",
+    customer_optional:"Customer (optional)", walkin:"Walk-in Customer", discount_pct:"Discount (%)",
+    discount_rs:"Discount", new_customer:"＋ New customer (type name)", cash_received:"Cash Received", change_due:"Change to Return",
+    credit_needs_customer:"For a credit sale, pick or type a customer name — otherwise the udhaar can't be tracked.",
+    print_hint:"Phone se print kar rahe hain? Print dialog me “More settings” kholein → Paper size = 58mm / 80mm (ya Roll), Margins = None, aur “Headers and footers” OFF karein. Isi se khali doosra page nahi aayega.",
     payment_label:"Payment", cash:"Cash", card:"Card", credit:"Credit",
     subtotal:"Subtotal", discount:"Discount", total:"Total", generate_receipt:"Generate Receipt",
     stock_levels:"Stock Levels", stock_levels_sub:"Adjust manually for damage, returns, restock",
@@ -555,7 +554,6 @@ const I18N = {
     cloud_sync_download_confirm:"This will replace the data on this device with the data from your Google Sheet. Continue?",
     cloud_sync_last_synced:"Last synced", cloud_sync_status_idle:"Not synced yet", cloud_sync_status_ok:"Synced", cloud_sync_status_busy:"Syncing…", cloud_sync_status_err:"Sync failed",
     export_pdf:"⬇ Export PDF",
-    new_customer_name:"New customer name", new_customer_phone:"Phone number", or_new_customer:"or add a new customer",
   },
   ur: {
     brand_sub: SHOP_NAME,
@@ -584,7 +582,10 @@ const I18N = {
     f_product_name:"پروڈکٹ کا نام", f_category:"قسم", f_stock:"اسٹاک", f_cost_price:"خرید قیمت", f_sell_price:"فروخت قیمت",
     cancel:"منسوخ", save_changes:"محفوظ کریں", add_product_btn:"پروڈکٹ شامل کریں",
     current_sale:"موجودہ سیل", clear:"صاف کریں", cart_empty:"سیل میں شامل کرنے کے لیے پروڈکٹ پر ٹیپ کریں۔",
-    customer_optional:"گاہک (اختیاری)", walkin:"عام گاہک", discount_pct:"رعایت (روپے)",
+    customer_optional:"گاہک (اختیاری)", walkin:"عام گاہک", discount_pct:"رعایت (%)",
+    discount_rs:"رعایت", new_customer:"＋ نیا گاہک (نام لکھیں)", cash_received:"موصول رقم", change_due:"واپس کرنے کی رقم",
+    credit_needs_customer:"ادھار سیل کے لیے گاہک منتخب کریں یا نام لکھیں — ورنہ ادھار کا حساب نہیں رکھا جا سکے گا۔",
+    print_hint:"موبائل سے پرنٹ کر رہے ہیں؟ پرنٹ ڈائیلاگ میں “More settings” کھولیں → Paper size = 58mm / 80mm (یا Roll)، Margins = None، اور “Headers and footers” بند کریں۔ اس سے خالی دوسرا صفحہ نہیں آئے گا۔",
     payment_label:"ادائیگی کا طریقہ", cash:"نقد", card:"کارڈ", credit:"ادھار",
     subtotal:"ذیلی کل", discount:"رعایت", total:"کل رقم", generate_receipt:"رسید بنائیں",
     stock_levels:"اسٹاک کی مقدار", stock_levels_sub:"نقصان، واپسی یا نئے اسٹاک کے لیے دستی طور پر تبدیل کریں",
@@ -624,7 +625,6 @@ const I18N = {
     cloud_sync_download_confirm:"اس سے اس ڈیوائس کا ڈیٹا آپ کی گوگل شیٹ کے ڈیٹا سے تبدیل ہو جائے گا۔ جاری رکھیں؟",
     cloud_sync_last_synced:"آخری ہم آہنگی", cloud_sync_status_idle:"ابھی سنک نہیں ہوا", cloud_sync_status_ok:"سنک ہو گیا", cloud_sync_status_busy:"سنک ہو رہا ہے…", cloud_sync_status_err:"سنک ناکام",
     export_pdf:"⬇ پی ڈی ایف ڈاؤن لوڈ کریں",
-    new_customer_name:"نئے گاہک کا نام", new_customer_phone:"فون نمبر", or_new_customer:"یا نیا گاہک شامل کریں",
   }
 };
 function t(key){ return (I18N[lang] && I18N[lang][key] !== undefined) ? I18N[lang][key] : (I18N.en[key] || key); }
@@ -634,7 +634,9 @@ let state = { products: [], customers: [], sales: [], expenses: [] };
 let view = "dashboard";
 let cart = []; // {productId, name, price, cost, qty}
 let selectedCustomerId = "";
-let discountAmt = 0;
+let discountRs = 0;                    // discount in RUPEES (used to be a %)
+let cashReceived = "";                 // what the customer handed over → change calculation
+let posNewCust = {name:"", phone:""};  // walk-in customer typed straight into the POS
 let payMethod = "cash";
 let lastReceipt = null;
 let productSearch = "";
@@ -649,8 +651,15 @@ let dataLoaded = false;
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function fmt(n){ return CURRENCY + " " + (Math.round((n||0)*100)/100).toLocaleString(undefined,{minimumFractionDigits:0, maximumFractionDigits:2}); }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
-function isToday(iso){ return iso.slice(0,10) === todayStr(); }
+// Local-date keys — NOT toISOString(), which is UTC. In Pakistan (UTC+5) that
+// made every sale between 12am and 5am count as "yesterday", so "Sales Today"
+// and the 7-day chart were wrong for early-morning shifts.
+function dayKey(d){
+  const x = (d instanceof Date) ? d : new Date(d);
+  return x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0');
+}
+function todayStr(){ return dayKey(new Date()); }
+function isToday(iso){ return dayKey(iso) === todayStr(); }
 function isThisMonth(iso){ const d=new Date(iso), n=new Date(); return d.getFullYear()===n.getFullYear() && d.getMonth()===n.getMonth(); }
 
 async function loadData(){
@@ -719,7 +728,7 @@ function renderLogin(){
     <div class="login-wrap">
       <div class="login-card">
         <div class="login-brand">
-          <div class="mark">Khata</div>
+          <div class="mark">Dashborad</div>
           <div class="sub">${esc(SHOP_NAME)}</div>
         </div>
         <div class="login-error" id="loginError">${lang==='ur'?'یوزر نیم یا پاس ورڈ غلط ہے۔':'Incorrect username or password.'}</div>
@@ -778,7 +787,7 @@ function render(){
     <div class="sidebar" id="sidebar">
       <div class="brand">
         <div class="brand-text">
-          <div class="mark">Khata</div>
+          <div class="mark">Dashborad</div>
           <div class="sub">${esc(SHOP_NAME)}</div>
         </div>
         <button type="button" class="sidebar-close" id="sidebarClose" aria-label="Close menu">×</button>
@@ -794,6 +803,11 @@ function render(){
         ${navItem('reports')}
       </ul>
       <div class="sidebar-foot">
+        <div class="sync-status" title="${t('cloud_sync_title')}">
+          <span class="sync-dot ${syncDotClass()}" id="syncDot"></span>
+          <span id="syncLabel">${syncLabel()}</span>
+        </div>
+        <button id="backupBtn" class="logout-btn">${t('backup_restore')}</button>
         <button id="logoutBtn" class="logout-btn">${lang==='ur'?'⏻ لاگ آؤٹ':'⏻ Logout'}</button>
         <input type="file" id="restoreFileInput" accept="application/json" style="display:none;">
       </div>
@@ -828,8 +842,98 @@ function render(){
   const closeBtn = document.getElementById('sidebarClose');
   if(closeBtn) closeBtn.onclick = closeSidebar;
   document.getElementById('logoutBtn').onclick = logout;
+  document.getElementById('backupBtn').onclick = openBackupModal;
   document.querySelectorAll('#langToggle [data-lang]').forEach(b=> b.onclick = ()=>{ lang = b.dataset.lang; state.settings.lang = lang; saveData(); render(); });
   renderContent();
+}
+
+// ================= BACKUP / RESTORE =================
+// The single most important safety net for a shop: the whole dataset as one
+// small JSON file the shopkeeper can WhatsApp to themselves and restore on any
+// device, with or without internet.
+function openBackupModal(){
+  openModal(`
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="modal-head"><h3>${t('backup_title')}</h3><button class="modal-close" id="modalClose">×</button></div>
+      <div class="modal-body">
+        <p style="font-size:13px; color:var(--muted); line-height:1.7; margin:0 0 16px 0;">${t('backup_desc')}</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn gold" id="doBackup">${t('backup_download')}</button>
+          <button class="btn outline" id="doRestore">${t('backup_restore_btn')}</button>
+        </div>
+        <div style="margin-top:16px; font-size:12px; color:var(--muted);">
+          ${t('cloud_sync_last_synced')}: ${state.settings && state.settings.lastSynced ? new Date(state.settings.lastSynced).toLocaleString() : '—'}
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn outline" id="modalCancel">${t('close')}</button></div>
+    </div>
+  </div>`);
+
+  document.getElementById('doBackup').onclick = ()=>{
+    const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Dashborad-backup-${todayStr()}.json`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    showToast(t('backup_downloaded'));
+  };
+
+  document.getElementById('doRestore').onclick = ()=>{
+    const input = document.getElementById('restoreFileInput');
+    input.value = '';
+    input.onchange = ()=>{
+      const file = input.files && input.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = async ()=>{
+        try{
+          const data = JSON.parse(reader.result);
+          if(!data || typeof data !== 'object' || !Array.isArray(data.products)) throw new Error('bad file');
+          if(!confirm(t('backup_restore_confirm'))) return;
+          state = {
+            products: Array.isArray(data.products) ? data.products : [],
+            customers: Array.isArray(data.customers) ? data.customers : [],
+            sales: Array.isArray(data.sales) ? data.sales : [],
+            expenses: Array.isArray(data.expenses) ? data.expenses : [],
+            settings: Object.assign({lang: lang}, data.settings || {})
+          };
+          if(!Array.isArray(state.settings.categories) || !state.settings.categories.length) state.settings.categories = DEFAULT_CATEGORIES.slice();
+          if(!Array.isArray(state.settings.expenseCategories) || !state.settings.expenseCategories.length) state.settings.expenseCategories = DEFAULT_EXPENSE_CATS.slice();
+          lang = state.settings.lang || lang;
+          await storageSet('shopdata', JSON.stringify(state));
+          closeModal();
+          render();
+          showToast(t('backup_restored'));
+        }catch(err){
+          showToast(t('backup_failed'));
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+}
+
+// ================= SYNC STATUS PILL =================
+function syncDotClass(){
+  return syncState==='ok' ? 'ok' : syncState==='busy' ? 'busy' : syncState==='err' ? 'err' : '';
+}
+function syncLabel(){
+  if(syncState==='ok'){
+    const ls = state.settings && state.settings.lastSynced;
+    return t('cloud_sync_status_ok') + (ls ? ' · ' + new Date(ls).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}) : '');
+  }
+  if(syncState==='busy') return t('cloud_sync_status_busy');
+  if(syncState==='err')  return t('cloud_sync_status_err');
+  return t('cloud_sync_status_idle');
+}
+function updateSyncPill(){
+  const dot = document.getElementById('syncDot');
+  const lab = document.getElementById('syncLabel');
+  if(dot) dot.className = 'sync-dot ' + syncDotClass();
+  if(lab) lab.textContent = syncLabel();
 }
 
 function navItem(key){
@@ -839,18 +943,8 @@ function sectionTitle(){
   return t('title_'+view);
 }
 
-// Re-renders #content while preserving keyboard focus + cursor position on
-// whatever input the user is currently typing in. Without this, every
-// keystroke in a text field (discount, search boxes, etc.) rebuilds the DOM
-// and the on-screen keyboard on mobile flickers/closes because the focused
-// element gets destroyed and recreated on every character typed.
 function renderContent(){
   const c = document.getElementById('content');
-  const active = document.activeElement;
-  let focusInfo = null;
-  if(active && active.id && c.contains(active) && (active.tagName==='INPUT' || active.tagName==='TEXTAREA' || active.tagName==='SELECT')){
-    focusInfo = { id: active.id, start: active.selectionStart, end: active.selectionEnd };
-  }
   if(view==='dashboard') c.innerHTML = viewDashboard();
   else if(view==='products') c.innerHTML = viewProducts();
   else if(view==='pos') c.innerHTML = viewPOS();
@@ -860,15 +954,6 @@ function renderContent(){
   else if(view==='reports') c.innerHTML = viewReports();
   else if(view==='categories') c.innerHTML = viewCategories();
   attachContentHandlers();
-  if(focusInfo){
-    const el = document.getElementById(focusInfo.id);
-    if(el){
-      el.focus({preventScroll:true});
-      if(typeof el.setSelectionRange === 'function' && focusInfo.start!=null){
-        try{ el.setSelectionRange(focusInfo.start, focusInfo.end); }catch(e){ /* not a text-selectable input, ignore */ }
-      }
-    }
-  }
 }
 
 // ================= DASHBOARD (simplified) =================
@@ -891,8 +976,8 @@ function viewDashboard(){
   const days = [];
   for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); days.push(d); }
   const dayTotals = days.map(d=>{
-    const key = d.toISOString().slice(0,10);
-    return state.sales.filter(s=>s.date.slice(0,10)===key).reduce((a,s)=>a+s.total,0);
+    const key = dayKey(d);
+    return state.sales.filter(s=>dayKey(s.date)===key).reduce((a,s)=>a+s.total,0);
   });
   const maxDay = Math.max(1, ...dayTotals);
 
@@ -964,7 +1049,7 @@ function viewDashboard(){
           ${days.map((d,idx)=>`
           <div class="bwrap">
             <div class="bval">${dayTotals[idx]>0?Math.round(dayTotals[idx]):''}</div>
-            <div class="bar ${isToday(d.toISOString())?'bar-today':''}" style="height:${Math.max(4,(dayTotals[idx]/maxDay)*120)}px;"></div>
+            <div class="bar ${isToday(d)?'bar-today':''}" style="height:${Math.max(4,(dayTotals[idx]/maxDay)*120)}px;"></div>
             <div class="blabel">${d.toLocaleDateString(undefined,{weekday:'short'})}</div>
           </div>`).join('')}
         </div>
@@ -997,12 +1082,29 @@ function viewDashboard(){
 }
 
 // ================= PRODUCTS =================
-function viewProducts(){
+function productsTableHtml(){
   const list = state.products.filter(p=>{
     const matchSearch = !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase());
     const matchCat = !productFilterCat || p.category===productFilterCat;
     return matchSearch && matchCat;
   });
+  if(list.length===0) return `<div class="empty"><div class="big">▢</div>${t('no_products')}</div>`;
+  return `
+    <table><thead><tr><th>${t('th_name')}</th><th>${t('th_category')}</th><th class="num">${t('th_cost')}</th><th class="num">${t('th_price')}</th><th class="num">${t('th_stock')}</th><th></th></tr></thead>
+    <tbody>${list.map(p=>`<tr>
+      <td>${esc(p.name)}</td>
+      <td>${esc(p.category)}</td>
+      <td class="num amount">${fmt(p.cost)}</td>
+      <td class="num amount">${fmt(p.price)}</td>
+      <td class="num">${p.stock<=LOW_STOCK_THRESHOLD?`<span class="pill low">${p.stock}</span>`:`<span class="pill ok">${p.stock}</span>`}</td>
+      <td><div class="row-actions">
+        <button class="icon-btn" data-edit-product="${p.id}">${t('edit')}</button>
+        <button class="icon-btn del" data-del-product="${p.id}">${t('delete')}</button>
+      </div></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function viewProducts(){
   return `
     <div class="panel">
       <div class="panel-head">
@@ -1017,22 +1119,30 @@ function viewProducts(){
             ${getCategories().map(c=>`<option value="${esc(c)}" ${productFilterCat===c?'selected':''}>${esc(c)}</option>`).join('')}
           </select>
         </div>
-        ${list.length===0 ? `<div class="empty"><div class="big">▢</div>${t('no_products')}</div>` : `
-        <table><thead><tr><th>${t('th_name')}</th><th>${t('th_category')}</th><th class="num">${t('th_cost')}</th><th class="num">${t('th_price')}</th><th class="num">${t('th_stock')}</th><th></th></tr></thead>
-        <tbody>${list.map(p=>`<tr>
-          <td>${esc(p.name)}</td>
-          <td>${esc(p.category)}</td>
-          <td class="num amount">${fmt(p.cost)}</td>
-          <td class="num amount">${fmt(p.price)}</td>
-          <td class="num">${p.stock<=LOW_STOCK_THRESHOLD?`<span class="pill low">${p.stock}</span>`:`<span class="pill ok">${p.stock}</span>`}</td>
-          <td><div class="row-actions">
-            <button class="icon-btn" data-edit-product="${p.id}">${t('edit')}</button>
-            <button class="icon-btn del" data-del-product="${p.id}">${t('delete')}</button>
-          </div></td>
-        </tr>`).join('')}</tbody></table>`}
+        <div id="prodTableWrap">${productsTableHtml()}</div>
       </div>
     </div>
   `;
+}
+
+// Re-renders only the table, so the search box keeps focus while typing.
+function refreshProductTable(){
+  const wrap = document.getElementById('prodTableWrap');
+  if(!wrap) return;
+  wrap.innerHTML = productsTableHtml();
+  bindProductRows();
+}
+function bindProductRows(){
+  document.querySelectorAll('#prodTableWrap [data-edit-product]').forEach(b=> b.onclick=()=>{
+    const p = state.products.find(x=>x.id===b.dataset.editProduct);
+    openModal(productFormModal(p)); bindProductForm(p);
+  });
+  document.querySelectorAll('#prodTableWrap [data-del-product]').forEach(b=> b.onclick=()=>{
+    if(confirm('Delete this product?')){
+      state.products = state.products.filter(p=>p.id!==b.dataset.delProduct);
+      saveData(); refreshProductTable(); showToast('Product deleted');
+    }
+  });
 }
 
 function productFormModal(product){
@@ -1124,60 +1234,94 @@ function categoryFormModal(isExpense){
 }
 
 // ================= POS =================
-function viewPOS(){
+// IMPORTANT: nothing in this screen calls renderContent() while the shopkeeper is
+// typing. A full re-render destroys the <input> that has focus, which is why the
+// on-screen keyboard used to snap shut and the mouse cursor jumped away on every
+// keystroke. Instead each piece of the screen is refreshed on its own.
+
+function posTilesHtml(){
   const list = state.products.filter(p=> !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase()));
+  if(list.length===0) return `<div class="empty" style="grid-column:1/-1;"><div class="big">▢</div>${t('no_products')}</div>`;
+  return list.map(p=>`
+    <button class="tile" data-add-cart="${p.id}" ${p.stock<=0?'disabled':''}>
+      ${p.stock<=LOW_STOCK_THRESHOLD?`<div class="stockflag">${p.stock<=0?'Out':p.stock+' left'}</div>`:''}
+      <div class="cat">${esc(p.category)}</div>
+      <div class="name">${esc(p.name)}</div>
+      <div class="price">${fmt(p.price)}</div>
+    </button>`).join('');
+}
+
+function cartItemsHtml(){
+  if(cart.length===0) return `<div class="cart-empty">${t('cart_empty')}</div>`;
+  return cart.map(i=>`
+    <div class="cart-item">
+      <div style="flex:1; min-width:0;">
+        <div class="ci-name">${esc(i.name)}</div>
+        <div class="ci-price">${fmt(i.price)} each</div>
+      </div>
+      <div class="qty-ctrl">
+        <button data-qty="${i.productId}:-1">−</button>
+        <span>${i.qty}</span>
+        <button data-qty="${i.productId}:1">+</button>
+      </div>
+      <button class="ci-remove" data-remove-cart="${i.productId}">×</button>
+    </div>`).join('');
+}
+
+// Single source of truth for the money maths — discount is a RUPEE amount now.
+function cartMath(){
   const subtotal = cart.reduce((a,i)=>a+i.price*i.qty,0);
-  const discountAmtClamped = Math.max(0, Math.min(subtotal, discountAmt));
-  const total = Math.max(0, subtotal - discountAmtClamped);
+  const discountAmt = Math.min(subtotal, Math.max(0, discountRs||0));
+  const total = subtotal - discountAmt;
+  const cash = parseFloat(cashReceived);
+  const change = (payMethod==='cash' && cashReceived!=='' && isFinite(cash)) ? (cash - total) : null;
+  return {subtotal, discountAmt, total, change};
+}
+
+function posTotalsHtml(){
+  const m = cartMath();
+  return `
+    <div class="cart-line"><span>${t('subtotal')}</span><span class="amount">${fmt(m.subtotal)}</span></div>
+    <div class="cart-line"><span>${t('discount_rs')}</span><span class="amount">−${fmt(m.discountAmt)}</span></div>
+    <div class="cart-line total"><span>${t('total')}</span><span class="amount">${fmt(m.total)}</span></div>
+    ${m.change!==null?`<div class="cart-line" style="font-weight:700; color:${m.change<0?'var(--brick)':'var(--ink)'};"><span>${t('change_due')}</span><span class="amount">${fmt(m.change)}</span></div>`:''}`;
+}
+
+function viewPOS(){
   return `
   <div class="pos-grid">
     <div>
       <div class="pos-search"><input id="posSearch" placeholder="${t('search_products')}" value="${esc(productSearch)}"></div>
-      <div class="product-tiles">
-        ${list.length===0 ? `<div class="empty" style="grid-column:1/-1;"><div class="big">▢</div>${t('no_products')}</div>` :
-        list.map(p=>`
-        <button class="tile" data-add-cart="${p.id}" ${p.stock<=0?'disabled':''}>
-          ${p.stock<=LOW_STOCK_THRESHOLD?`<div class="stockflag">${p.stock<=0?'Out':p.stock+' left'}</div>`:''}
-          <div class="cat">${esc(p.category)}</div>
-          <div class="name">${esc(p.name)}</div>
-          <div class="price">${fmt(p.price)}</div>
-        </button>`).join('')}
-      </div>
+      <div class="product-tiles" id="posTiles">${posTilesHtml()}</div>
     </div>
     <div class="cart-panel">
-      <div class="cart-head"><h3>${t('current_sale')}</h3>${cart.length?`<button class="icon-btn del" id="clearCart">${t('clear')}</button>`:''}</div>
-      <div class="cart-items">
-        ${cart.length===0 ? `<div class="cart-empty">${t('cart_empty')}</div>` :
-        cart.map(i=>`
-        <div class="cart-item">
-          <div>
-            <div class="ci-name">${esc(i.name)}</div>
-            <div class="ci-price">${fmt(i.price)} each</div>
-          </div>
-          <div class="qty-ctrl">
-            <button data-qty="${i.productId}:-1">−</button>
-            <span>${i.qty}</span>
-            <button data-qty="${i.productId}:1">+</button>
-          </div>
-          <button class="ci-remove" data-remove-cart="${i.productId}">×</button>
-        </div>`).join('')}
+      <div class="cart-head">
+        <h3>${t('current_sale')}</h3>
+        <button class="icon-btn del" id="clearCart" style="display:${cart.length?'inline-block':'none'};">${t('clear')}</button>
       </div>
+      <div class="cart-items" id="cartItems">${cartItemsHtml()}</div>
       <div class="cart-foot">
         <div class="field">
           <label>${t('customer_optional')}</label>
           <select id="posCustomer">
             <option value="">${t('walkin')}</option>
-            ${state.customers.map(c=>`<option value="${c.id}" ${selectedCustomerId===c.id?'selected':''}>${esc(c.name)}${c.phone?(' — '+esc(c.phone)):''}</option>`).join('')}
+            ${state.customers.map(c=>`<option value="${c.id}" ${selectedCustomerId===c.id?'selected':''}>${esc(c.name)}${c.phone?' — '+esc(c.phone):''}</option>`).join('')}
+            <option value="__new" ${selectedCustomerId==='__new'?'selected':''}>${t('new_customer')}</option>
           </select>
         </div>
-        <div class="pos-cust-divider"><span>${t('or_new_customer')}</span></div>
-        <div class="pos-new-cust-row">
-          <input id="posNewCustName" placeholder="${t('new_customer_name')}" value="${esc(window.__posNewCustName||'')}" ${selectedCustomerId?'disabled':''}>
-          <input id="posNewCustPhone" placeholder="${t('new_customer_phone')}" value="${esc(window.__posNewCustPhone||'')}" inputmode="tel" ${selectedCustomerId?'disabled':''}>
+        <div id="posNewCustWrap" style="display:${selectedCustomerId==='__new'?'block':'none'};">
+          <div class="field" style="margin-bottom:10px;">
+            <label>${t('f_name')}</label>
+            <input id="posNewName" value="${esc(posNewCust.name)}" placeholder="${lang==='ur'?'گاہک کا نام':'Customer name'}" autocomplete="off">
+          </div>
+          <div class="field" style="margin-bottom:10px;">
+            <label>${t('f_phone')}</label>
+            <input id="posNewPhone" type="tel" inputmode="tel" value="${esc(posNewCust.phone)}" placeholder="03xx-xxxxxxx" autocomplete="off">
+          </div>
         </div>
         <div class="field">
-          <label>${t('discount_pct')}</label>
-          <input id="posDiscount" type="number" min="0" step="0.01" value="${discountAmt || ''}" placeholder="0">
+          <label>${t('discount_rs')} (${CURRENCY})</label>
+          <input id="posDiscount" type="number" min="0" step="1" inputmode="decimal" value="${discountRs||''}" placeholder="0">
         </div>
         <label style="font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.4px;">${t('payment_label')}</label>
         <div class="pay-options">
@@ -1185,15 +1329,51 @@ function viewPOS(){
           <button data-pay="card" class="${payMethod==='card'?'sel':''}">${t('card')}</button>
           <button data-pay="credit" class="${payMethod==='credit'?'sel':''}">${t('credit')}</button>
         </div>
-        <div class="cart-line"><span>${t('subtotal')}</span><span class="amount">${fmt(subtotal)}</span></div>
-        <div class="cart-line"><span>${t('discount')}</span><span class="amount">−${fmt(discountAmtClamped)}</span></div>
-        <div class="cart-line total"><span>${t('total')}</span><span class="amount">${fmt(total)}</span></div>
-        <button class="btn gold" style="width:100%; justify-content:center; padding:12px;" id="checkoutBtn" ${cart.length===0?'disabled':''}>${t('generate_receipt')}</button>
+        <div class="field" id="posCashWrap" style="display:${payMethod==='cash'?'flex':'none'}; margin-bottom:10px;">
+          <label>${t('cash_received')} (${CURRENCY})</label>
+          <input id="posCash" type="number" min="0" step="1" inputmode="decimal" value="${cashReceived}" placeholder="0">
+        </div>
+        <div id="posTotals">${posTotalsHtml()}</div>
+        <button class="btn gold" style="width:100%; justify-content:center; padding:12px; margin-top:10px;" id="checkoutBtn" ${cart.length===0?'disabled':''}>${t('generate_receipt')}</button>
       </div>
     </div>
   </div>
   `;
 }
+
+/* ---- targeted refreshers: never touch a focused input ---- */
+function refreshPosTotals(){
+  const el = document.getElementById('posTotals');
+  if(el) el.innerHTML = posTotalsHtml();
+  const btn = document.getElementById('checkoutBtn');
+  if(btn) btn.disabled = cart.length===0;
+}
+function refreshCart(){
+  const el = document.getElementById('cartItems');
+  if(!el) return;
+  el.innerHTML = cartItemsHtml();
+  const clr = document.getElementById('clearCart');
+  if(clr) clr.style.display = cart.length ? 'inline-block' : 'none';
+  bindCartRows();
+  refreshPosTotals();
+}
+function refreshPosTiles(){
+  const el = document.getElementById('posTiles');
+  if(!el) return;
+  el.innerHTML = posTilesHtml();
+  el.querySelectorAll('[data-add-cart]').forEach(b=> b.onclick=()=> addToCart(b.dataset.addCart));
+}
+function bindCartRows(){
+  document.querySelectorAll('#cartItems [data-qty]').forEach(b=> b.onclick=()=>{
+    const parts = b.dataset.qty.split(':');
+    changeQty(parts[0], parseInt(parts[1]));
+  });
+  document.querySelectorAll('#cartItems [data-remove-cart]').forEach(b=> b.onclick=()=>{
+    cart = cart.filter(i=>i.productId!==b.dataset.removeCart);
+    refreshCart();
+  });
+}
+
 
 // ================= INVENTORY =================
 function viewInventory(){
@@ -1221,8 +1401,28 @@ function viewInventory(){
 }
 
 // ================= CUSTOMERS =================
-function viewCustomers(){
+function customersTableHtml(){
   const list = state.customers.filter(c=> !customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase()) || (c.phone||'').includes(customerSearch));
+  if(list.length===0) return `<div class="empty"><div class="big">◍</div>${t('no_customers')}</div>`;
+  return `
+    <table><thead><tr><th>${t('th_name')}</th><th>${t('th_phone')}</th><th class="num">${t('th_purchases')}</th><th class="num">${t('th_outstanding')}</th><th></th></tr></thead>
+    <tbody>${list.map(c=>{
+      const purchases = state.sales.filter(s=>s.customerId===c.id);
+      const balance = purchases.filter(s=>s.payment==='credit').reduce((a,s)=>a+s.total,0) - (c.paidOff||0);
+      return `<tr>
+        <td><a href="#" data-view-customer="${c.id}" style="color:var(--ink); font-weight:600; text-decoration:none;">${esc(c.name)}</a></td>
+        <td>${esc(c.phone||'—')}</td>
+        <td class="num">${purchases.length}</td>
+        <td class="num">${balance>0?`<span class="pill low">${fmt(balance)}</span>`:`<span class="pill ok">${t('clear_balance')}</span>`}</td>
+        <td><div class="row-actions">
+          <button class="icon-btn" data-edit-customer="${c.id}">${t('edit')}</button>
+          <button class="icon-btn del" data-del-customer="${c.id}">${t('delete')}</button>
+        </div></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function viewCustomers(){
   return `
   <div class="panel">
     <div class="panel-head">
@@ -1231,25 +1431,42 @@ function viewCustomers(){
     </div>
     <div class="panel-body">
       <div class="search-bar"><input id="custSearch" placeholder="${t('search_name_phone')}" value="${esc(customerSearch)}"></div>
-      ${list.length===0 ? `<div class="empty"><div class="big">◍</div>${t('no_customers')}</div>` : `
-      <table><thead><tr><th>${t('th_name')}</th><th>${t('th_phone')}</th><th class="num">${t('th_purchases')}</th><th class="num">${t('th_outstanding')}</th><th></th></tr></thead>
-      <tbody>${list.map(c=>{
-        const purchases = state.sales.filter(s=>s.customerId===c.id);
-        const balance = purchases.filter(s=>s.payment==='credit').reduce((a,s)=>a+s.total,0) - (c.paidOff||0);
-        return `<tr>
-          <td><a href="#" data-view-customer="${c.id}" style="color:var(--ink); font-weight:600; text-decoration:none;">${esc(c.name)}</a></td>
-          <td>${esc(c.phone||'—')}</td>
-          <td class="num">${purchases.length}</td>
-          <td class="num">${balance>0?`<span class="pill low">${fmt(balance)}</span>`:`<span class="pill ok">${t('clear_balance')}</span>`}</td>
-          <td><div class="row-actions">
-            <button class="icon-btn" data-edit-customer="${c.id}">${t('edit')}</button>
-            <button class="icon-btn del" data-del-customer="${c.id}">${t('delete')}</button>
-          </div></td>
-        </tr>`;
-      }).join('')}</tbody></table>`}
+      <div id="custTableWrap">${customersTableHtml()}</div>
     </div>
   </div>
   `;
+}
+
+// Re-renders only the table, so the search box keeps focus while typing.
+function refreshCustomerTable(){
+  const wrap = document.getElementById('custTableWrap');
+  if(!wrap) return;
+  wrap.innerHTML = customersTableHtml();
+  bindCustomerRows();
+}
+function bindCustomerRows(){
+  document.querySelectorAll('#custTableWrap [data-edit-customer]').forEach(b=> b.onclick=()=>{
+    const c = state.customers.find(x=>x.id===b.dataset.editCustomer);
+    openModal(customerFormModal(c)); bindCustomerForm(c);
+  });
+  document.querySelectorAll('#custTableWrap [data-del-customer]').forEach(b=> b.onclick=()=>{
+    if(confirm('Delete this customer?')){
+      state.customers = state.customers.filter(c=>c.id!==b.dataset.delCustomer);
+      saveData(); refreshCustomerTable(); showToast('Customer deleted');
+    }
+  });
+  document.querySelectorAll('#custTableWrap [data-view-customer]').forEach(a=> a.onclick=(e)=>{
+    e.preventDefault();
+    const c = state.customers.find(x=>x.id===a.dataset.viewCustomer);
+    openModal(customerDetailModal(c));
+    const markPaidBtn = document.getElementById('markPaidBtn');
+    if(markPaidBtn) markPaidBtn.onclick = ()=>{
+      const purchases = state.sales.filter(s=>s.customerId===c.id && s.payment==='credit');
+      const owed = purchases.reduce((a,s)=>a+s.total,0);
+      c.paidOff = (c.paidOff||0) + owed;
+      saveData(); closeModal(); refreshCustomerTable(); showToast('Marked as paid');
+    };
+  });
 }
 
 function customerFormModal(customer){
@@ -1358,11 +1575,12 @@ function scheduleCloudSync(){
   if(!CLOUD_SHEET_URL) return;
   clearTimeout(cloudSyncTimer);
   cloudSyncTimer = setTimeout(()=>{
+    syncState = 'busy'; updateSyncPill();
     pushToSheet(CLOUD_SHEET_URL).then(ok=>{
       syncState = ok ? 'ok' : 'err';
       if(ok){ state.settings.lastSynced = new Date().toISOString(); storageSet('shopdata', JSON.stringify(state)); }
-      // Intentionally no UI update here — this runs quietly in the background.
-      // If it fails, we just retry on the next save; nothing is shown to the user.
+      // Only the small sidebar pill updates — nothing interrupts the counter.
+      updateSyncPill();
     });
   }, 1500); // debounce so rapid edits (e.g. qty +/-) don't spam the network
 }
@@ -1457,8 +1675,8 @@ function viewReports(){
   const days = [];
   for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); days.push(d); }
   const dayTotals = days.map(d=>{
-    const key = d.toISOString().slice(0,10);
-    return state.sales.filter(s=>s.date.slice(0,10)===key).reduce((a,s)=>a+s.total,0);
+    const key = dayKey(d);
+    return state.sales.filter(s=>dayKey(s.date)===key).reduce((a,s)=>a+s.total,0);
   });
   const maxDay = Math.max(1, ...dayTotals);
 
@@ -1533,6 +1751,7 @@ function receiptView(sale){
       <div class="rline"><span>${t('receipt_date')}</span><span>${new Date(sale.date).toLocaleString()}</span></div>
       <div class="rline"><span>${t('receipt_no')}</span><span>#${sale.id.slice(-6).toUpperCase()}</span></div>
       <div class="rline"><span>${t('receipt_customer')}</span><span>${esc(sale.customerName||t('walkin'))}</span></div>
+      ${sale.customerPhone?`<div class="rline"><span>${t('th_phone')}</span><span>${esc(sale.customerPhone)}</span></div>`:''}
       <hr>
       ${sale.items.map(i=>`
         <div class="ritem"><span class="n">${esc(i.name)} ×${i.qty}</span><span>${fmt(i.price*i.qty)}</span></div>
@@ -1541,6 +1760,10 @@ function receiptView(sale){
       <div class="rline"><span>${t('receipt_subtotal')}</span><span>${fmt(sale.subtotal)}</span></div>
       <div class="rline"><span>${t('receipt_discount')}</span><span>−${fmt(sale.subtotal - sale.total)}</span></div>
       <div class="rline rtotal"><span>${t('receipt_total')}</span><span>${fmt(sale.total)}</span></div>
+      <div class="rline"><span>${t('payment_label')}</span><span>${payLabel}</span></div>
+      ${sale.cashReceived!=null?`
+      <div class="rline"><span>${t('cash_received')}</span><span>${fmt(sale.cashReceived)}</span></div>
+      <div class="rline"><span>${t('change_due')}</span><span>${fmt(sale.cashReceived - sale.total)}</span></div>`:''}
       <hr>
       <div class="rsub" style="margin-top:14px;">${t('receipt_thanks')}</div>
     </div>
@@ -1550,6 +1773,9 @@ function receiptView(sale){
     <button class="btn outline" id="downloadReceipt">⬇ ${t('download_txt')}</button>
     <button class="btn gold" id="whatsappReceipt">${t('share_whatsapp')}</button>
     <button class="btn" id="newSaleBtn">${t('new_sale')}</button>
+  </div>
+  <div class="no-print" style="max-width:520px; margin:14px auto 0 auto; font-size:11.5px; color:var(--muted); line-height:1.6; background:var(--paper-dim); border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
+    ${t('print_hint')}
   </div>
   `;
 }
@@ -1561,6 +1787,7 @@ function receiptText(sale){
   lines.push(t('receipt_date') + ': ' + new Date(sale.date).toLocaleString());
   lines.push(t('receipt_no') + ': #' + sale.id.slice(-6).toUpperCase());
   lines.push(t('receipt_customer') + ': ' + (sale.customerName || t('walkin')));
+  if(sale.customerPhone) lines.push(t('th_phone') + ': ' + sale.customerPhone);
   lines.push('--------------------------');
   sale.items.forEach(i=> lines.push(`${i.name} x${i.qty}  ${fmt(i.price*i.qty)}`));
   lines.push('--------------------------');
@@ -1568,59 +1795,121 @@ function receiptText(sale){
   lines.push(t('receipt_discount') + ': -' + fmt(sale.subtotal - sale.total));
   lines.push(t('receipt_total') + ': ' + fmt(sale.total));
   lines.push(t('payment_label') + ': ' + t(sale.payment));
+  if(sale.cashReceived != null){
+    lines.push(t('cash_received') + ': ' + fmt(sale.cashReceived));
+    lines.push(t('change_due') + ': ' + fmt(sale.cashReceived - sale.total));
+  }
   lines.push(t('receipt_thanks'));
   return lines.join('\n');
 }
 
-// Sets a print-only <style> so the printed/PDF page matches the actual
-// content size instead of a fixed A4/Letter page with lots of blank space.
-// mode 'receipt' -> narrow thermal slip width, height auto (fits content)
-// mode 'report'  -> normal A4 portrait with small margins
+// ---------------------------------------------------------------------------
+// THERMAL SLIP PRINTING
 //
-// NOTE ON MOBILE: Android/iOS print dialogs are controlled by the phone's
-// OS-level print service, not just this page's CSS — some mobile browsers
-// ignore a custom @page size entirely and fall back to the phone's default
-// paper (usually Letter or A4), even though this same CSS works correctly
-// on desktop Chrome/Edge "Save as PDF". There is no reliable way to force
-// this from web content on every mobile browser. If a phone keeps forcing
-// Letter/A4, open the print dialog's "More settings" and pick "Custom" or
-// the closest small paper size manually, or use the "Download .txt" /
-// "Share via WhatsApp" buttons instead of Print on that device.
-function applyPrintPageSize(mode){
+// The old approach printed the live app page. Two problems:
+//   * #app has min-height:100vh. During printing 1vh = one full page, so the
+//     page always overflowed past the printable area (browser margins) and a
+//     second, blank page came out. That was the "2 papers, 1 khali" bug.
+//   * Mobile Chrome largely ignores @page { size: ... }, so it fell back to
+//     Letter/A4 and the slip printed tiny in the corner of a big sheet.
+//
+// Now we build a *separate*, self-contained slip node (#printRoot) with its
+// width fixed in millimetres, measure its real height off-screen, and print
+// ONLY that node with every other element removed from the print flow. One
+// page, exact paper width, no blank sheet.
+// ---------------------------------------------------------------------------
+function slipHtml(sale, wmm){
+  const contentW = wmm <= 58 ? 50 : 72;   // real printable width of 58mm / 80mm rolls
+  const fs = wmm <= 58 ? 10.5 : 12;
+  const sm = fs - 1.5;
+  const dash = `<div style="border-top:1px dashed #000; margin:4px 0;"></div>`;
+  const row = (l,r,extra)=>`<div style="display:flex; justify-content:space-between; gap:6px; ${extra||''}"><span>${l}</span><span style="white-space:nowrap;">${r}</span></div>`;
+  const items = sale.items.map(i=>`
+    <div style="margin:2px 0;">
+      <div>${esc(i.name)}</div>
+      ${row(`${i.qty} × ${fmt(i.price)}`, fmt(i.price*i.qty), `font-size:${sm}px;`)}
+    </div>`).join('');
+  return `
+  <div style="width:${contentW}mm; margin:0 auto; padding:2mm 0 3mm 0; box-sizing:border-box;
+              font-family:'IBM Plex Mono','Courier New',monospace; font-size:${fs}px; line-height:1.35;
+              color:#000; background:#fff; direction:${lang==='ur'?'rtl':'ltr'};">
+    <div style="text-align:center; font-weight:700; font-size:${fs+3}px;">${esc(SHOP_NAME)}</div>
+    <div style="text-align:center; font-size:${sm}px;">${t('receipt_title')}</div>
+    ${dash}
+    ${row(t('receipt_no'), '#'+sale.id.slice(-6).toUpperCase())}
+    ${row(t('receipt_date'), new Date(sale.date).toLocaleString())}
+    ${row(t('receipt_customer'), esc(sale.customerName||t('walkin')))}
+    ${sale.customerPhone ? row(t('th_phone'), esc(sale.customerPhone)) : ''}
+    ${dash}
+    ${items}
+    ${dash}
+    ${row(t('receipt_subtotal'), fmt(sale.subtotal))}
+    ${row(t('receipt_discount'), '−'+fmt(sale.subtotal - sale.total))}
+    ${row(t('receipt_total'), fmt(sale.total), `font-weight:700; font-size:${fs+2}px; margin-top:2px;`)}
+    ${row(t('payment_label'), t(sale.payment))}
+    ${sale.cashReceived!=null ? row(t('cash_received'), fmt(sale.cashReceived)) + row(t('change_due'), fmt(sale.cashReceived - sale.total)) : ''}
+    ${dash}
+    <div style="text-align:center; font-size:${sm}px;">${t('receipt_thanks')}</div>
+  </div>`;
+}
+
+function printThermalSlip(sale){
+  // The report print style, if any, must not fight with this one.
+  const old = document.getElementById('printPageStyle');
+  if(old) old.textContent = '';
+
+  let root = document.getElementById('printRoot');
+  if(!root){ root = document.createElement('div'); root.id = 'printRoot'; document.body.appendChild(root); }
+  root.innerHTML = slipHtml(sale, slipWidth);
+
+  // Measure the slip at its true print width, off-screen.
+  root.style.cssText = 'display:block; position:absolute; left:-10000px; top:0; width:'+slipWidth+'mm;';
+  const hPx = root.firstElementChild ? root.firstElementChild.offsetHeight : 400;
+  root.style.cssText = '';                                  // back to hidden
+  const hMm = Math.ceil(hPx / 96 * 25.4) + 4;               // 4mm feed margin
+
+  let st = document.getElementById('slipPageStyle');
+  if(!st){ st = document.createElement('style'); st.id = 'slipPageStyle'; document.head.appendChild(st); }
+  st.textContent = `
+    @media print{
+      @page{ size:${slipWidth}mm ${hMm}mm; margin:0; }
+      html, body{ margin:0 !important; padding:0 !important; width:${slipWidth}mm !important;
+                  height:auto !important; min-height:0 !important; background:#fff !important; }
+      /* kill the app shell's 100vh so no blank second page is generated */
+      body.printing-slip > *{ display:none !important; }
+      body.printing-slip > #printRoot{ display:block !important; width:${slipWidth}mm !important; }
+      body.printing-slip #app, body.printing-slip .main, body.printing-slip .content{
+        min-height:0 !important; height:auto !important;
+      }
+      body.printing-slip #printRoot *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    }`;
+
+  document.body.classList.add('printing-slip');
+  const cleanup = ()=>{ document.body.classList.remove('printing-slip'); window.onafterprint = null; };
+  window.onafterprint = cleanup;
+  setTimeout(()=>{ window.print(); setTimeout(cleanup, 2000); }, 80);
+}
+
+// A4 portrait print style, used only by the Reports → Export PDF button.
+function applyPrintPageSize(){
   let styleTag = document.getElementById('printPageStyle');
   if(!styleTag){
     styleTag = document.createElement('style');
     styleTag.id = 'printPageStyle';
     document.head.appendChild(styleTag);
   }
-  if(mode === 'receipt'){
-    const w = slipWidth;
-    const el = document.getElementById('receiptPrintable');
-    const hPx = el ? el.scrollHeight : 400;
-    const hMm = Math.ceil((hPx / 96) * 25.4) + 10; // +10mm safety padding
-    styleTag.textContent = `
-      @media print {
-        @page { size: ${w}mm ${hMm}mm; margin: 0; }
-        html, body { height:auto !important; min-height:0 !important; }
-        #app { min-height:0 !important; display:block !important; }
-        .main { min-height:0 !important; }
-        .content { padding:0 !important; }
-        .receipt-wrap { padding:0 !important; }
-        .receipt { width:${w-8}mm !important; box-shadow:none !important; }
-      }`;
-  } else {
-    styleTag.textContent = `
-      @media print {
-        @page { size: A4 portrait; margin: 12mm; }
-        html, body { height:auto !important; min-height:0 !important; }
-        #app { min-height:0 !important; display:block !important; }
-        .main { min-height:0 !important; }
-        .content { padding:0 !important; }
-        .tabs, .quick-actions { display:none !important; }
-        .print-report-header { display:block !important; margin-bottom:12px; }
-        body.print-report-mode .no-print { display:none !important; }
-      }`;
-  }
+  const slip = document.getElementById('slipPageStyle');
+  if(slip) slip.textContent = '';
+  styleTag.textContent = `
+    @media print {
+      @page { size: A4 portrait; margin: 12mm; }
+      html, body { height:auto !important; min-height:0 !important; }
+      #app, .main, .content { min-height:0 !important; height:auto !important; }
+      .content { padding:0 !important; }
+      .tabs, .quick-actions { display:none !important; }
+      .print-report-header { display:block !important; margin-bottom:12px; }
+      body.print-report-mode .no-print { display:none !important; }
+    }`;
 }
 
 // ================= HELPERS =================
@@ -1651,15 +1940,9 @@ function attachContentHandlers(){
 
   if(view==='products'){
     document.getElementById('addProductBtn').onclick = ()=>{ editingProduct=null; openModal(productFormModal(null)); bindProductForm(null); };
-    document.getElementById('prodSearch').oninput = e=>{ productSearch=e.target.value; renderContent(); };
-    document.getElementById('prodCatFilter').onchange = e=>{ productFilterCat=e.target.value; renderContent(); };
-    document.querySelectorAll('[data-edit-product]').forEach(b=> b.onclick=()=>{
-      const p = state.products.find(x=>x.id===b.dataset.editProduct);
-      openModal(productFormModal(p)); bindProductForm(p);
-    });
-    document.querySelectorAll('[data-del-product]').forEach(b=> b.onclick=()=>{
-      if(confirm('Delete this product?')){ state.products = state.products.filter(p=>p.id!==b.dataset.delProduct); saveData(); renderContent(); showToast('Product deleted'); }
-    });
+    document.getElementById('prodSearch').oninput = e=>{ productSearch=e.target.value; refreshProductTable(); };
+    document.getElementById('prodCatFilter').onchange = e=>{ productFilterCat=e.target.value; refreshProductTable(); };
+    bindProductRows();
   }
 
   if(view==='categories'){
@@ -1700,24 +1983,40 @@ function attachContentHandlers(){
   }
 
   if(view==='pos'){
-    document.getElementById('posSearch').oninput = e=>{ productSearch = e.target.value; renderContent(); };
-    document.querySelectorAll('[data-add-cart]').forEach(b=> b.onclick=()=> addToCart(b.dataset.addCart));
-    document.querySelectorAll('[data-qty]').forEach(b=> b.onclick=()=>{
-      const [id,delta] = b.dataset.qty.split(':'); changeQty(id, parseInt(delta));
-    });
-    document.querySelectorAll('[data-remove-cart]').forEach(b=> b.onclick=()=>{ cart = cart.filter(i=>i.productId!==b.dataset.removeCart); renderContent(); });
-    const clearBtn = document.getElementById('clearCart'); if(clearBtn) clearBtn.onclick=()=>{ cart=[]; renderContent(); };
-    document.getElementById('posCustomer').onchange = e=>{
+    // Every handler below updates only the part of the screen that changed, so the
+    // input the shopkeeper is typing in keeps its focus (and the phone keyboard stays up).
+    document.getElementById('posSearch').oninput = e=>{ productSearch = e.target.value; refreshPosTiles(); };
+    refreshPosTiles();
+    bindCartRows();
+    const clearBtn = document.getElementById('clearCart');
+    if(clearBtn) clearBtn.onclick=()=>{ cart=[]; refreshCart(); };
+
+    const custSel = document.getElementById('posCustomer');
+    custSel.onchange = e=>{
       selectedCustomerId = e.target.value;
-      if(selectedCustomerId){ window.__posNewCustName=''; window.__posNewCustPhone=''; }
-      renderContent();
+      const wrap = document.getElementById('posNewCustWrap');
+      wrap.style.display = selectedCustomerId==='__new' ? 'block' : 'none';
+      if(selectedCustomerId==='__new'){ const n=document.getElementById('posNewName'); if(n) n.focus(); }
     };
-    const newNameEl = document.getElementById('posNewCustName');
-    const newPhoneEl = document.getElementById('posNewCustPhone');
-    if(newNameEl) newNameEl.oninput = e=>{ window.__posNewCustName = e.target.value; };
-    if(newPhoneEl) newPhoneEl.oninput = e=>{ window.__posNewCustPhone = e.target.value; };
-    document.getElementById('posDiscount').oninput = e=>{ discountAmt = Math.max(0, parseFloat(e.target.value)||0); renderContent(); };
-    document.querySelectorAll('[data-pay]').forEach(b=> b.onclick=()=>{ payMethod = b.dataset.pay; renderContent(); });
+    const nName = document.getElementById('posNewName');
+    const nPhone = document.getElementById('posNewPhone');
+    if(nName) nName.oninput = e=>{ posNewCust.name = e.target.value; };
+    if(nPhone) nPhone.oninput = e=>{ posNewCust.phone = e.target.value; };
+
+    document.getElementById('posDiscount').oninput = e=>{
+      discountRs = Math.max(0, parseFloat(e.target.value)||0);
+      refreshPosTotals();
+    };
+    const cashEl = document.getElementById('posCash');
+    if(cashEl) cashEl.oninput = e=>{ cashReceived = e.target.value; refreshPosTotals(); };
+
+    document.querySelectorAll('[data-pay]').forEach(b=> b.onclick=()=>{
+      payMethod = b.dataset.pay;
+      document.querySelectorAll('[data-pay]').forEach(x=> x.classList.toggle('sel', x.dataset.pay===payMethod));
+      document.getElementById('posCashWrap').style.display = payMethod==='cash' ? 'flex' : 'none';
+      refreshPosTotals();
+    });
+
     const checkoutBtn = document.getElementById('checkoutBtn');
     if(checkoutBtn) checkoutBtn.onclick = checkout;
   }
@@ -1732,26 +2031,8 @@ function attachContentHandlers(){
 
   if(view==='customers'){
     document.getElementById('addCustomerBtn').onclick = ()=>{ openModal(customerFormModal(null)); bindCustomerForm(null); };
-    document.getElementById('custSearch').oninput = e=>{ customerSearch=e.target.value; renderContent(); };
-    document.querySelectorAll('[data-edit-customer]').forEach(b=> b.onclick=()=>{
-      const c = state.customers.find(x=>x.id===b.dataset.editCustomer);
-      openModal(customerFormModal(c)); bindCustomerForm(c);
-    });
-    document.querySelectorAll('[data-del-customer]').forEach(b=> b.onclick=()=>{
-      if(confirm('Delete this customer?')){ state.customers = state.customers.filter(c=>c.id!==b.dataset.delCustomer); saveData(); renderContent(); showToast('Customer deleted'); }
-    });
-    document.querySelectorAll('[data-view-customer]').forEach(a=> a.onclick=(e)=>{
-      e.preventDefault();
-      const c = state.customers.find(x=>x.id===a.dataset.viewCustomer);
-      openModal(customerDetailModal(c));
-      const markPaidBtn = document.getElementById('markPaidBtn');
-      if(markPaidBtn) markPaidBtn.onclick = ()=>{
-        const purchases = state.sales.filter(s=>s.customerId===c.id && s.payment==='credit');
-        const owed = purchases.reduce((a,s)=>a+s.total,0);
-        c.paidOff = (c.paidOff||0) + owed;
-        saveData(); closeModal(); renderContent(); showToast('Marked as paid');
-      };
-    });
+    document.getElementById('custSearch').oninput = e=>{ customerSearch=e.target.value; refreshCustomerTable(); };
+    bindCustomerRows();
   }
 
   if(view==='expenses'){
@@ -1766,7 +2047,7 @@ function attachContentHandlers(){
     document.querySelectorAll('[data-range]').forEach(b=> b.onclick=()=>{ reportRange=b.dataset.range; renderContent(); });
     const exportBtn = document.getElementById('exportPdfBtn');
     if(exportBtn) exportBtn.onclick = ()=>{
-      applyPrintPageSize('report');
+      applyPrintPageSize();
       document.body.classList.add('print-report-mode');
       window.onafterprint = ()=>{ document.body.classList.remove('print-report-mode'); window.onafterprint = null; };
       window.print();
@@ -1807,7 +2088,8 @@ function bindExpenseForm(){
     const note = document.getElementById('f_enote').value.trim();
     const date = document.getElementById('f_edate').value || todayStr();
     if(amount<=0){ showToast('Enter a valid amount'); return; }
-    state.expenses.push({id:uid(), category, amount, note, date: new Date(date).toISOString()});
+    // Store at local noon so the date can never drift a day either way.
+    state.expenses.push({id:uid(), category, amount, note, date: new Date(date + 'T12:00:00').toISOString()});
     saveData(); closeModal(); renderContent(); showToast('Expense added');
   };
 }
@@ -1820,7 +2102,7 @@ function addToCart(productId){
   if(inCartQty+1 > p.stock){ showToast('Not enough stock'); return; }
   if(existing){ existing.qty++; }
   else{ cart.push({productId:p.id, name:p.name, price:p.price, cost:p.cost, qty:1}); }
-  renderContent();
+  refreshCart();
 }
 function changeQty(productId, delta){
   const item = cart.find(i=>i.productId===productId);
@@ -1830,44 +2112,51 @@ function changeQty(productId, delta){
   if(newQty<=0){ cart = cart.filter(i=>i.productId!==productId); }
   else if(p && newQty > p.stock){ showToast('Not enough stock'); return; }
   else{ item.qty = newQty; }
-  renderContent();
-}
-
-// Finds an existing customer to reuse (matched by phone, to avoid duplicate
-// records for the same person), or creates a brand new one from the quick
-// "New customer" fields on the POS screen.
-function resolveOrCreateCustomer(){
-  if(selectedCustomerId){
-    return state.customers.find(c=>c.id===selectedCustomerId) || null;
-  }
-  const name = (window.__posNewCustName||'').trim();
-  const phone = (window.__posNewCustPhone||'').trim();
-  if(!name && !phone) return null;
-  if(phone){
-    const existing = state.customers.find(c=>c.phone && c.phone.replace(/\s+/g,'')===phone.replace(/\s+/g,''));
-    if(existing){
-      if(name && existing.name!==name){ existing.name = name; } // keep name fresh if they gave a new one
-      return existing;
-    }
-  }
-  const created = {id:uid(), name: name || phone, phone, paidOff:0};
-  state.customers.push(created);
-  return created;
+  refreshCart();
 }
 
 function checkout(){
   if(cart.length===0) return;
-  const subtotal = cart.reduce((a,i)=>a+i.price*i.qty,0);
-  const discountAmtClamped = Math.max(0, Math.min(subtotal, discountAmt));
-  const total = Math.max(0, subtotal - discountAmtClamped);
-  const customer = resolveOrCreateCustomer();
+  const m = cartMath();
+
+  // Resolve the customer: an existing one from the dropdown, or a brand-new one
+  // typed straight into the POS. If a phone number matches somebody we already
+  // have, reuse that record instead of creating a duplicate.
+  let customer = null;
+  if(selectedCustomerId === '__new'){
+    const nm = (posNewCust.name||'').trim();
+    const ph = (posNewCust.phone||'').trim();
+    const phDigits = ph.replace(/\D/g,'');
+    if(nm || phDigits){
+      if(phDigits) customer = state.customers.find(c=> (c.phone||'').replace(/\D/g,'') === phDigits) || null;
+      if(customer){ if(nm) customer.name = nm; if(ph) customer.phone = ph; }
+      else{
+        customer = {id:uid(), name: nm || ph, phone: ph, paidOff:0};
+        state.customers.push(customer);
+      }
+    }
+  } else if(selectedCustomerId){
+    customer = state.customers.find(c=>c.id===selectedCustomerId) || null;
+  }
+
+  // A credit sale with no customer is untrackable udhaar — block it.
+  if(payMethod === 'credit' && !customer){ showToast(t('credit_needs_customer')); return; }
+
+  const cash = parseFloat(cashReceived);
   const sale = {
     id: uid(),
     date: new Date().toISOString(),
     items: cart.map(i=>({productId:i.productId, name:i.name, qty:i.qty, price:i.price, cost:i.cost})),
-    subtotal, total, discountAmt: discountAmtClamped, payment: payMethod,
+    subtotal: m.subtotal,
+    discountRs: m.discountAmt,
+    // kept so older records and any % reporting still line up
+    discountPct: m.subtotal>0 ? Math.round((m.discountAmt/m.subtotal)*10000)/100 : 0,
+    total: m.total,
+    payment: payMethod,
+    cashReceived: (payMethod==='cash' && cashReceived!=='' && isFinite(cash)) ? cash : null,
     customerId: customer ? customer.id : null,
-    customerName: customer ? customer.name : null
+    customerName: customer ? customer.name : null,
+    customerPhone: customer ? (customer.phone || null) : null
   };
   // decrement stock
   cart.forEach(i=>{
@@ -1877,8 +2166,8 @@ function checkout(){
   state.sales.push(sale);
   saveData();
   lastReceipt = sale;
-  cart = []; discountAmt = 0; payMethod = 'cash'; selectedCustomerId = '';
-  window.__posNewCustName = ''; window.__posNewCustPhone = '';
+  cart = []; discountRs = 0; cashReceived = ''; posNewCust = {name:'', phone:''};
+  payMethod = 'cash'; selectedCustomerId = '';
   showReceiptScreen(sale);
 }
 
@@ -1886,7 +2175,6 @@ function showReceiptScreen(sale){
   const content = document.getElementById('content');
   document.querySelector('.topbar h1').textContent = t('receipt_title');
   content.innerHTML = receiptView(sale);
-  applyPrintPageSize('receipt');
   bindReceiptActions(sale);
 }
 
@@ -1894,10 +2182,9 @@ function bindReceiptActions(sale){
   document.querySelectorAll('[data-slip]').forEach(b=> b.onclick = ()=>{
     slipWidth = parseInt(b.dataset.slip);
     document.getElementById('content').innerHTML = receiptView(sale);
-    applyPrintPageSize('receipt');
     bindReceiptActions(sale);
   });
-  document.getElementById('printReceipt').onclick = ()=>{ applyPrintPageSize('receipt'); window.print(); };
+  document.getElementById('printReceipt').onclick = ()=> printThermalSlip(sale);
   document.getElementById('downloadReceipt').onclick = ()=>{
     const blob = new Blob([receiptText(sale)], {type:'text/plain'});
     const a = document.createElement('a');
@@ -1917,7 +2204,7 @@ function renderBoot(msg){
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="boot-wrap">
-      <div class="mark">Khata</div>
+      <div class="mark">Dashborad</div>
       <div class="boot-spinner"></div>
       <div class="boot-msg">${esc(msg)}</div>
     </div>`;
@@ -1942,6 +2229,7 @@ async function startApp(){
   const isEmpty = state.products.length===0 && state.customers.length===0 && state.sales.length===0 && state.expenses.length===0;
   if(CLOUD_SHEET_URL && isEmpty){
     syncState = 'busy';
+    updateSyncPill();
     pullFromSheet(CLOUD_SHEET_URL).then(async (ok)=>{
       if(ok){
         syncState='ok';
@@ -1950,6 +2238,7 @@ async function startApp(){
         render(); // refresh the screen now that real data has arrived
       } else {
         syncState='idle';
+        updateSyncPill();
       }
     });
   }
