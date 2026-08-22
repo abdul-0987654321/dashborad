@@ -536,6 +536,7 @@ const I18N = {
     receipt_subtotal:"Subtotal", receipt_discount:"Discount", receipt_total:"TOTAL", receipt_thanks:"Thank you for your purchase!",
     print_save:"Print / Save PDF", download_txt:"Download .txt", share_whatsapp:"Share via WhatsApp", new_sale:"New Sale",
     slip_size:"Slip size", loading:"Loading your shop data…", data_on_device:"Data stored on this device",
+    print_hint:"58mm Print",
     backup_restore:"⬇ Backup / Restore", backup_title:"Backup & Restore",
     backup_desc:"Download a backup file of all your data (products, sales, customers, expenses). Keep it safe, or send it to yourself on WhatsApp — you can restore it anytime, on any device.",
     backup_download:"Download Backup", backup_restore_btn:"Restore from File",
@@ -607,6 +608,7 @@ const I18N = {
     receipt_subtotal:"ذیلی کل", receipt_discount:"رعایت", receipt_total:"کل رقم", receipt_thanks:"خریداری کا شکریہ!",
     print_save:"پرنٹ / پی ڈی ایف محفوظ کریں", download_txt:"ڈاؤن لوڈ کریں", share_whatsapp:"واٹس ایپ پر بھیجیں", new_sale:"نئی سیل",
     slip_size:"رسید کا سائز", loading:"آپ کی دکان کا ڈیٹا لوڈ ہو رہا ہے…", data_on_device:"ڈیٹا اسی ڈیوائس پر محفوظ ہے",
+    print_hint:"رسید 58mm رول کے لیے سیٹ ہے۔ فون سے پرنٹ کر رہے ہیں؟ پرنٹ ڈائیلاگ میں “More settings” کھولیں → Paper size = 58mm (یا Roll)، Margins = None، اور “Headers and footers” بند کریں۔ اسی سے خالی دوسرا صفحہ نہیں آئے گا۔",
     backup_restore:"⬇ بیک اپ / بحال کریں", backup_title:"بیک اپ اور بحالی",
     backup_desc:"اپنے تمام ڈیٹا (مصنوعات، فروخت، گاہک، اخراجات) کی بیک اپ فائل ڈاؤن لوڈ کریں۔ اسے محفوظ رکھیں یا واٹس ایپ پر خود کو بھیج دیں — آپ اسے کسی بھی وقت، کسی بھی ڈیوائس پر بحال کر سکتے ہیں۔",
     backup_download:"بیک اپ ڈاؤن لوڈ کریں", backup_restore_btn:"فائل سے بحال کریں",
@@ -1882,18 +1884,14 @@ function viewReports(){
 }
 
 // ================= RECEIPT =================
-let slipWidth = 80; // mm — thermal slip size, 58 or 80
+const SLIP_MM = 58;         // thermal roll width this shop uses
+const SLIP_CONTENT_MM = 50; // printable area inside a 58mm roll
 
 function receiptView(sale){
   const payLabel = t(sale.payment);
   return `
-  <div class="slip-size-row no-print">
-    <span>${t('slip_size')}:</span>
-    <button data-slip="58" class="${slipWidth===58?'sel':''}">58mm</button>
-  
-  </div>
   <div class="receipt-wrap">
-    <div class="receipt" id="receiptPrintable" style="width:${slipWidth===58?'260px':'320px'};">
+    <div class="receipt" id="receiptPrintable" style="width:260px;">
       <h2>${esc(SHOP_NAME)}</h2>
       <div class="rsub">${t('receipt_title')}</div>
       <div class="rline"><span>${t('receipt_date')}</span><span>${new Date(sale.date).toLocaleString()}</span></div>
@@ -1966,9 +1964,9 @@ function receiptText(sale){
 // ONLY that node with every other element removed from the print flow. One
 // page, exact paper width, no blank sheet.
 // ---------------------------------------------------------------------------
-function slipHtml(sale, wmm){
-  const contentW = wmm <= 58 ? 50 : 72;   // real printable width of 58mm / 80mm rolls
-  const fs = wmm <= 58 ? 10.5 : 12;
+function slipHtml(sale){
+  const contentW = SLIP_CONTENT_MM;
+  const fs = 10.5;
   const sm = fs - 1.5;
   const dash = `<div style="border-top:1px dashed #000; margin:4px 0;"></div>`;
   const row = (l,r,extra)=>`<div style="display:flex; justify-content:space-between; gap:6px; ${extra||''}"><span>${l}</span><span style="white-space:nowrap;">${r}</span></div>`;
@@ -2008,10 +2006,10 @@ function printThermalSlip(sale){
 
   let root = document.getElementById('printRoot');
   if(!root){ root = document.createElement('div'); root.id = 'printRoot'; document.body.appendChild(root); }
-  root.innerHTML = slipHtml(sale, slipWidth);
+  root.innerHTML = slipHtml(sale);
 
   // Measure the slip at its true print width, off-screen.
-  root.style.cssText = 'display:block; position:absolute; left:-10000px; top:0; width:'+slipWidth+'mm;';
+  root.style.cssText = 'display:block; position:absolute; left:-10000px; top:0; width:'+SLIP_MM+'mm;';
   const hPx = root.firstElementChild ? root.firstElementChild.offsetHeight : 400;
   root.style.cssText = '';                                  // back to hidden
   const hMm = Math.ceil(hPx / 96 * 25.4) + 4;               // 4mm feed margin
@@ -2020,12 +2018,12 @@ function printThermalSlip(sale){
   if(!st){ st = document.createElement('style'); st.id = 'slipPageStyle'; document.head.appendChild(st); }
   st.textContent = `
     @media print{
-      @page{ size:${slipWidth}mm ${hMm}mm; margin:0; }
-      html, body{ margin:0 !important; padding:0 !important; width:${slipWidth}mm !important;
+      @page{ size:${SLIP_MM}mm ${hMm}mm; margin:0; }
+      html, body{ margin:0 !important; padding:0 !important; width:${SLIP_MM}mm !important;
                   height:auto !important; min-height:0 !important; background:#fff !important; }
       /* kill the app shell's 100vh so no blank second page is generated */
       body.printing-slip > *{ display:none !important; }
-      body.printing-slip > #printRoot{ display:block !important; width:${slipWidth}mm !important; }
+      body.printing-slip > #printRoot{ display:block !important; width:${SLIP_MM}mm !important; }
       body.printing-slip #app, body.printing-slip .main, body.printing-slip .content{
         min-height:0 !important; height:auto !important;
       }
@@ -2327,11 +2325,6 @@ function showReceiptScreen(sale){
 }
 
 function bindReceiptActions(sale){
-  document.querySelectorAll('[data-slip]').forEach(b=> b.onclick = ()=>{
-    slipWidth = parseInt(b.dataset.slip);
-    document.getElementById('content').innerHTML = receiptView(sale);
-    bindReceiptActions(sale);
-  });
   document.getElementById('printReceipt').onclick = ()=> printThermalSlip(sale);
   document.getElementById('downloadReceipt').onclick = ()=>{
     const blob = new Blob([receiptText(sale)], {type:'text/plain'});
