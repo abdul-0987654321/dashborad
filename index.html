@@ -553,6 +553,7 @@ const I18N = {
     cloud_sync_downloading:"Loading data from Google Sheet…", cloud_sync_downloaded:"Data loaded from Google Sheet",
     cloud_sync_download_confirm:"This will replace the data on this device with the data from your Google Sheet. Continue?",
     cloud_sync_last_synced:"Last synced", cloud_sync_status_idle:"Not synced yet", cloud_sync_status_ok:"Synced", cloud_sync_status_busy:"Syncing…", cloud_sync_status_err:"Sync failed",
+    sync_now:"Tap to sync now", sync_updated:"Updated from cloud", sync_uptodate:"Already up to date", sync_offline:"No internet — working offline",
     export_pdf:"⬇ Export PDF",
   },
   ur: {
@@ -624,6 +625,7 @@ const I18N = {
     cloud_sync_downloading:"گوگل شیٹ سے ڈیٹا لوڈ ہو رہا ہے…", cloud_sync_downloaded:"گوگل شیٹ سے ڈیٹا لوڈ ہو گیا",
     cloud_sync_download_confirm:"اس سے اس ڈیوائس کا ڈیٹا آپ کی گوگل شیٹ کے ڈیٹا سے تبدیل ہو جائے گا۔ جاری رکھیں؟",
     cloud_sync_last_synced:"آخری ہم آہنگی", cloud_sync_status_idle:"ابھی سنک نہیں ہوا", cloud_sync_status_ok:"سنک ہو گیا", cloud_sync_status_busy:"سنک ہو رہا ہے…", cloud_sync_status_err:"سنک ناکام",
+    sync_now:"ابھی سنک کریں", sync_updated:"کلاؤڈ سے اپ ڈیٹ ہو گیا", sync_uptodate:"پہلے سے اپ ڈیٹ ہے", sync_offline:"انٹرنیٹ نہیں — آف لائن چل رہا ہے",
     export_pdf:"⬇ پی ڈی ایف ڈاؤن لوڈ کریں",
   }
 };
@@ -651,6 +653,85 @@ let dataLoaded = false;
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function fmt(n){ return CURRENCY + " " + (Math.round((n||0)*100)/100).toLocaleString(undefined,{minimumFractionDigits:0, maximumFractionDigits:2}); }
+
+// ---------------------------------------------------------------
+// CROSS-DEVICE MERGE
+// The old sync sent the whole state and let "last write win". That meant a
+// phone with stale data could overwrite everything the laptop had just done.
+// Instead we now merge record-by-record: every record carries an `updatedAt`
+// stamp, and the newer copy of each id wins. Deletions leave a tombstone so
+// the other device doesn't quietly resurrect a product you removed.
+// ---------------------------------------------------------------
+function nowIso(){ return new Date().toISOString(); }
+
+// Call this whenever a record is created or edited.
+function touch(rec){ if(rec) rec.updatedAt = nowIso(); return rec; }
+
+// Call this INSTEAD of just dropping a record, so the delete survives a sync.
+function tombstone(id){
+  if(!id) return;
+  if(!Array.isArray(state.tombstones)) state.tombstones = [];
+  state.tombstones = state.tombstones.filter(x=> x && x.id !== id);
+  state.tombstones.push({ id: id, at: nowIso() });
+}
+
+// Union two lists of records by id; for a clash the newer `updatedAt` wins.
+// A record deleted after its last edit stays deleted.
+function mergeCollection(localArr, remoteArr, deletedMap){
+  const out = new Map();
+  const put = (rec)=>{
+    if(!rec || !rec.id) return;
+    const deletedAt = deletedMap.get(rec.id);
+    if(deletedAt && deletedAt >= (rec.updatedAt || '')) return; // removed on purpose
+    const prev = out.get(rec.id);
+    // ISO strings compare correctly as plain strings, so no Date parsing needed.
+    // A record with no stamp at all (older data, or a field the Google Sheet
+    // dropped) loses to one that has a stamp — and local wins a total tie,
+    // because local is what the shopkeeper is looking at right now.
+    if(!prev || (rec.updatedAt || '') > (prev.updatedAt || '')) out.set(rec.id, rec);
+  };
+  (Array.isArray(localArr)  ? localArr  : []).forEach(put);
+  (Array.isArray(remoteArr) ? remoteArr : []).forEach(put);
+  return Array.from(out.values());
+}
+
+function mergeList(a, b, fallback){
+  const out = Array.from(new Set([].concat(Array.isArray(a)?a:[], Array.isArray(b)?b:[]))).filter(Boolean);
+  return out.length ? out : fallback.slice();
+}
+
+function mergeStates(local, remote){
+  // Newest tombstone per id wins.
+  const deletedMap = new Map();
+  [].concat(Array.isArray(local.tombstones)?local.tombstones:[],
+            Array.isArray(remote.tombstones)?remote.tombstones:[])
+    .forEach(x=>{
+      if(!x || !x.id) return;
+      const prev = deletedMap.get(x.id) || '';
+      if((x.at || '') > prev) deletedMap.set(x.id, x.at || '');
+    });
+  // Forget tombstones after 60 days so the sync payload stays small.
+  const cutoff = new Date(Date.now() - 60*86400000).toISOString();
+  const keptTombs = Array.from(deletedMap.entries())
+    .filter(pair=> pair[1] > cutoff)
+    .map(pair=> ({ id: pair[0], at: pair[1] }));
+
+  const ls = local.settings || {}, rs = remote.settings || {};
+  return {
+    products:   mergeCollection(local.products,  remote.products,  deletedMap),
+    customers:  mergeCollection(local.customers, remote.customers, deletedMap),
+    sales:      mergeCollection(local.sales,     remote.sales,     deletedMap),
+    expenses:   mergeCollection(local.expenses,  remote.expenses,  deletedMap),
+    tombstones: keptTombs,
+    settings: {
+      // This device's own language choice sticks — it isn't shop-wide data.
+      lang: ls.lang || rs.lang || 'en',
+      categories:        mergeList(ls.categories,        rs.categories,        DEFAULT_CATEGORIES),
+      expenseCategories: mergeList(ls.expenseCategories, rs.expenseCategories, DEFAULT_EXPENSE_CATS),
+      lastSynced: nowIso()
+    }
+  };
+}
 // Local-date keys — NOT toISOString(), which is UTC. In Pakistan (UTC+5) that
 // made every sale between 12am and 5am count as "yesterday", so "Sales Today"
 // and the 7-day chart were wrong for early-morning shifts.
@@ -671,6 +752,7 @@ async function loadData(){
   if(!state.customers) state.customers = [];
   if(!state.sales) state.sales = [];
   if(!state.expenses) state.expenses = [];
+  if(!Array.isArray(state.tombstones)) state.tombstones = [];
   if(!state.settings) state.settings = { lang: 'en' };
   if(!Array.isArray(state.settings.categories) || !state.settings.categories.length){
     state.settings.categories = DEFAULT_CATEGORIES.slice();
@@ -803,7 +885,7 @@ function render(){
         ${navItem('reports')}
       </ul>
       <div class="sidebar-foot">
-        <div class="sync-status" title="${t('cloud_sync_title')}">
+        <div class="sync-status" id="syncPill" title="${t('sync_now')}" style="cursor:pointer">
           <span class="sync-dot ${syncDotClass()}" id="syncDot"></span>
           <span id="syncLabel">${syncLabel()}</span>
         </div>
@@ -843,6 +925,10 @@ function render(){
   if(closeBtn) closeBtn.onclick = closeSidebar;
   document.getElementById('logoutBtn').onclick = logout;
   document.getElementById('backupBtn').onclick = openBackupModal;
+  // Tapping the sync pill forces an immediate pull-and-merge — handy when the
+  // shopkeeper knows a sale was just rung up on the other device.
+  const pill = document.getElementById('syncPill');
+  if(pill) pill.onclick = ()=> syncNow({ force: true, announce: true });
   document.querySelectorAll('#langToggle [data-lang]').forEach(b=> b.onclick = ()=>{ lang = b.dataset.lang; state.settings.lang = lang; saveData(); render(); });
   renderContent();
 }
@@ -897,6 +983,9 @@ function openBackupModal(){
             customers: Array.isArray(data.customers) ? data.customers : [],
             sales: Array.isArray(data.sales) ? data.sales : [],
             expenses: Array.isArray(data.expenses) ? data.expenses : [],
+            // Keep the backup's deletion record, else restoring would revive
+            // every product/customer this shop had already removed.
+            tombstones: Array.isArray(data.tombstones) ? data.tombstones : [],
             settings: Object.assign({lang: lang}, data.settings || {})
           };
           if(!Array.isArray(state.settings.categories) || !state.settings.categories.length) state.settings.categories = DEFAULT_CATEGORIES.slice();
@@ -1139,6 +1228,7 @@ function bindProductRows(){
   });
   document.querySelectorAll('#prodTableWrap [data-del-product]').forEach(b=> b.onclick=()=>{
     if(confirm('Delete this product?')){
+      tombstone(b.dataset.delProduct);
       state.products = state.products.filter(p=>p.id!==b.dataset.delProduct);
       saveData(); refreshProductTable(); showToast('Product deleted');
     }
@@ -1451,6 +1541,7 @@ function bindCustomerRows(){
   });
   document.querySelectorAll('#custTableWrap [data-del-customer]').forEach(b=> b.onclick=()=>{
     if(confirm('Delete this customer?')){
+      tombstone(b.dataset.delCustomer);
       state.customers = state.customers.filter(c=>c.id!==b.dataset.delCustomer);
       saveData(); refreshCustomerTable(); showToast('Customer deleted');
     }
@@ -1463,7 +1554,7 @@ function bindCustomerRows(){
     if(markPaidBtn) markPaidBtn.onclick = ()=>{
       const purchases = state.sales.filter(s=>s.customerId===c.id && s.payment==='credit');
       const owed = purchases.reduce((a,s)=>a+s.total,0);
-      c.paidOff = (c.paidOff||0) + owed;
+      c.paidOff = (c.paidOff||0) + owed; touch(c);
       saveData(); closeModal(); refreshCustomerTable(); showToast('Marked as paid');
     };
   });
@@ -1566,23 +1657,82 @@ function expenseFormModal(){
 }
 
 // ================= CLOUD SYNC (Google Sheet via Apps Script) =================
-// Runs silently in the background — no buttons, no modal, no scary "sync failed"
-// message in the sidebar. Local data (on this device) is always the source of
-// truth for what the shopkeeper sees; the cloud copy is just a background backup.
+// Runs silently in the background. Every device merges rather than overwrites:
+// see mergeStates() above. Two rules keep multi-device use safe:
+//   1. Never push before the first pull of this session has finished — otherwise
+//      a device that was opened with stale data would flatten the newer copy.
+//   2. Always pull-and-merge on startup, on refocus, and when the network
+//      returns, so a second device fills itself in without any manual step.
 
 let cloudSyncTimer = null;
+let firstPullDone = false;   // gate on rule 1
+let pendingPush   = false;   // an edit that arrived while we were still pulling
+let lastPullAt    = 0;       // throttle for the refocus/online triggers
+let syncingNow    = false;   // stops overlapping syncs stepping on each other
+
 function scheduleCloudSync(){
   if(!CLOUD_SHEET_URL) return;
+  // An edit before the first pull is remembered, then pushed once merge is done.
+  if(!firstPullDone){ pendingPush = true; return; }
   clearTimeout(cloudSyncTimer);
   cloudSyncTimer = setTimeout(()=>{
     syncState = 'busy'; updateSyncPill();
     pushToSheet(CLOUD_SHEET_URL).then(ok=>{
       syncState = ok ? 'ok' : 'err';
-      if(ok){ state.settings.lastSynced = new Date().toISOString(); storageSet('shopdata', JSON.stringify(state)); }
+      if(ok){ state.settings.lastSynced = nowIso(); storageSet('shopdata', JSON.stringify(state)); }
       // Only the small sidebar pill updates — nothing interrupts the counter.
       updateSyncPill();
     });
   }, 1500); // debounce so rapid edits (e.g. qty +/-) don't spam the network
+}
+
+// Pull the cloud copy, merge it into whatever this device has, save, redraw.
+// This is what actually fixes "a new device shows nothing until incognito".
+async function syncNow(opts){
+  const o = opts || {};
+  if(!CLOUD_SHEET_URL || syncingNow) return false;
+  // Don't hammer Apps Script on every tab switch.
+  if(!o.force && Date.now() - lastPullAt < 20000) return false;
+  syncingNow = true;
+  syncState = 'busy'; updateSyncPill();
+
+  const remote = await fetchRemote(CLOUD_SHEET_URL);
+  lastPullAt = Date.now();
+
+  if(!remote){
+    // Offline or Apps Script asleep — keep working on local data, say nothing scary.
+    syncingNow = false;
+    firstPullDone = true;
+    syncState = 'err'; updateSyncPill();
+    if(pendingPush){ pendingPush = false; scheduleCloudSync(); }
+    if(o.announce) showToast(t('sync_offline'));
+    return false;
+  }
+
+  const before = JSON.stringify([state.products, state.customers, state.sales, state.expenses]);
+  state = mergeStates(state, remote);
+  lang = state.settings.lang || lang;
+  const changed = JSON.stringify([state.products, state.customers, state.sales, state.expenses]) !== before;
+
+  await storageSet('shopdata', JSON.stringify(state));
+  firstPullDone = true;
+  syncingNow = false;
+  syncState = 'ok'; updateSyncPill();
+
+  // Push the merged result back so the cloud also gains whatever was local-only.
+  scheduleCloudSync();
+  if(pendingPush) pendingPush = false;
+
+  // Redraw only if the numbers actually moved, and never mid-typing.
+  if(changed && !isTypingInAField()) render();
+  if(o.announce) showToast(changed ? t('sync_updated') : t('sync_uptodate'));
+  return true;
+}
+
+// Never yank the screen out from under someone filling in a field.
+function isTypingInAField(){
+  const el = document.activeElement;
+  return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'));
 }
 
 async function pingSheet(url){
@@ -1593,21 +1743,48 @@ async function pingSheet(url){
   }catch(e){ return false; }
 }
 
+// Reads the cloud copy WITHOUT touching `state` — the caller merges it.
+async function fetchRemote(url){
+  if(!url) return null;
+  try{
+    const res = await fetch(url + (url.includes('?')?'&':'?') + 'action=load');
+    const data = await res.json();
+    if(!(data && data.success)) return null;
+    const s = data.settings || {};
+    return {
+      products:  Array.isArray(data.products)  ? data.products  : [],
+      customers: Array.isArray(data.customers) ? data.customers : [],
+      sales:     Array.isArray(data.sales)     ? data.sales     : [],
+      expenses:  Array.isArray(data.expenses)  ? data.expenses  : [],
+      // Older Apps Script versions know nothing about tombstones; accept them
+      // at the top level or tucked inside settings, and cope with neither.
+      tombstones: Array.isArray(data.tombstones) ? data.tombstones
+                : (Array.isArray(s.tombstones)   ? s.tombstones : []),
+      settings: s
+    };
+  }catch(e){ return null; }
+}
+
 async function pushToSheet(url){
   if(!url) return false;
   try{
     // Sends structured rows (not a single JSON blob) so the Google Sheet stays
     // human-readable: separate tabs for Products, Customers, Sales, Sale Items, Expenses.
+    const tombs = Array.isArray(state.tombstones) ? state.tombstones : [];
     const payload = {
       action: 'save',
       products: state.products,
       customers: state.customers,
       sales: state.sales,
       expenses: state.expenses,
+      // Sent at the top level for the current Apps Script, and mirrored inside
+      // settings so an older script that only copies `settings` still relays them.
+      tombstones: tombs,
       settings: {
         lang: (state.settings && state.settings.lang) || 'en',
         categories: getCategories(),
-        expenseCategories: getExpenseCats()
+        expenseCategories: getExpenseCats(),
+        tombstones: tombs
       }
     };
     const res = await fetch(url, {
@@ -1617,33 +1794,6 @@ async function pushToSheet(url){
     });
     const data = await res.json();
     return !!(data && data.success);
-  }catch(e){ return false; }
-}
-
-async function pullFromSheet(url){
-  if(!url) return false;
-  try{
-    const res = await fetch(url + (url.includes('?')?'&':'?') + 'action=load');
-    const data = await res.json();
-    if(data && data.success){
-      const keepLang = (state.settings && state.settings.lang) || lang;
-      const keepCats = getCategories();
-      const keepExpCats = getExpenseCats();
-      const incoming = data.settings || {};
-      state = {
-        products: Array.isArray(data.products) ? data.products : [],
-        customers: Array.isArray(data.customers) ? data.customers : [],
-        sales: Array.isArray(data.sales) ? data.sales : [],
-        expenses: Array.isArray(data.expenses) ? data.expenses : [],
-        settings: {
-          lang: incoming.lang || keepLang,
-          categories: Array.isArray(incoming.categories) && incoming.categories.length ? incoming.categories : keepCats,
-          expenseCategories: Array.isArray(incoming.expenseCategories) && incoming.expenseCategories.length ? incoming.expenseCategories : keepExpCats
-        }
-      };
-      return true;
-    }
-    return false;
   }catch(e){ return false; }
 }
 
@@ -2025,7 +2175,7 @@ function attachContentHandlers(){
     document.querySelectorAll('[data-stock-adj]').forEach(b=> b.onclick=()=>{
       const [id,delta] = b.dataset.stockAdj.split(':');
       const p = state.products.find(x=>x.id===id);
-      if(p){ p.stock = Math.max(0, p.stock + parseInt(delta)); saveData(); renderContent(); showToast('Stock updated'); }
+      if(p){ p.stock = Math.max(0, p.stock + parseInt(delta)); touch(p); saveData(); renderContent(); showToast('Stock updated'); }
     });
   }
 
@@ -2039,7 +2189,7 @@ function attachContentHandlers(){
     document.getElementById('addExpenseBtn').onclick = ()=>{ openModal(expenseFormModal()); bindExpenseForm(); };
     document.getElementById('expCatFilter').onchange = e=>{ expenseFilterCat=e.target.value; renderContent(); };
     document.querySelectorAll('[data-del-expense]').forEach(b=> b.onclick=()=>{
-      if(confirm('Delete this expense?')){ state.expenses = state.expenses.filter(x=>x.id!==b.dataset.delExpense); saveData(); renderContent(); showToast('Expense deleted'); }
+      if(confirm('Delete this expense?')){ tombstone(b.dataset.delExpense); state.expenses = state.expenses.filter(x=>x.id!==b.dataset.delExpense); saveData(); renderContent(); showToast('Expense deleted'); }
     });
   }
 
@@ -2064,9 +2214,9 @@ function bindProductForm(product){
     const stock = parseInt(document.getElementById('f_stock').value)||0;
     if(!name){ showToast('Please enter a product name'); return; }
     if(product){
-      Object.assign(product, {name,category,cost,price,stock});
+      Object.assign(product, {name,category,cost,price,stock}); touch(product);
     }else{
-      state.products.push({id:uid(), name, category, cost, price, stock});
+      state.products.push(touch({id:uid(), name, category, cost, price, stock}));
     }
     saveData(); closeModal(); renderContent(); showToast(product?'Product updated':'Product added');
   };
@@ -2076,8 +2226,8 @@ function bindCustomerForm(customer){
     const name = document.getElementById('f_cname').value.trim();
     const phone = document.getElementById('f_cphone').value.trim();
     if(!name){ showToast('Please enter a name'); return; }
-    if(customer){ Object.assign(customer, {name, phone}); }
-    else{ state.customers.push({id:uid(), name, phone, paidOff:0}); }
+    if(customer){ Object.assign(customer, {name, phone}); touch(customer); }
+    else{ state.customers.push(touch({id:uid(), name, phone, paidOff:0})); }
     saveData(); closeModal(); renderContent(); showToast(customer?'Customer updated':'Customer added');
   };
 }
@@ -2089,7 +2239,7 @@ function bindExpenseForm(){
     const date = document.getElementById('f_edate').value || todayStr();
     if(amount<=0){ showToast('Enter a valid amount'); return; }
     // Store at local noon so the date can never drift a day either way.
-    state.expenses.push({id:uid(), category, amount, note, date: new Date(date + 'T12:00:00').toISOString()});
+    state.expenses.push(touch({id:uid(), category, amount, note, date: new Date(date + 'T12:00:00').toISOString()}));
     saveData(); closeModal(); renderContent(); showToast('Expense added');
   };
 }
@@ -2129,10 +2279,10 @@ function checkout(){
     const phDigits = ph.replace(/\D/g,'');
     if(nm || phDigits){
       if(phDigits) customer = state.customers.find(c=> (c.phone||'').replace(/\D/g,'') === phDigits) || null;
-      if(customer){ if(nm) customer.name = nm; if(ph) customer.phone = ph; }
+      if(customer){ if(nm) customer.name = nm; if(ph) customer.phone = ph; touch(customer); }
       else{
         customer = {id:uid(), name: nm || ph, phone: ph, paidOff:0};
-        state.customers.push(customer);
+        touch(customer); state.customers.push(customer);
       }
     }
   } else if(selectedCustomerId){
@@ -2161,9 +2311,9 @@ function checkout(){
   // decrement stock
   cart.forEach(i=>{
     const p = state.products.find(x=>x.id===i.productId);
-    if(p) p.stock = Math.max(0, p.stock - i.qty);
+    if(p){ p.stock = Math.max(0, p.stock - i.qty); touch(p); }
   });
-  state.sales.push(sale);
+  touch(sale); state.sales.push(sale);
   saveData();
   lastReceipt = sale;
   cart = []; discountRs = 0; cashReceived = ''; posNewCust = {name:'', phone:''};
@@ -2221,27 +2371,27 @@ async function startApp(){
   await loadData();
   render();
 
-  // If a cloud sheet is configured and this device has NO local data yet
-  // (first time this browser/device is used), pull from the sheet in the
-  // BACKGROUND. Google Apps Script can take a few seconds to wake up
-  // ("cold start"), so this must never block the first screen the
-  // shopkeeper sees — it just quietly fills in once it arrives.
-  const isEmpty = state.products.length===0 && state.customers.length===0 && state.sales.length===0 && state.expenses.length===0;
-  if(CLOUD_SHEET_URL && isEmpty){
-    syncState = 'busy';
-    updateSyncPill();
-    pullFromSheet(CLOUD_SHEET_URL).then(async (ok)=>{
-      if(ok){
-        syncState='ok';
-        state.settings.lastSynced = new Date().toISOString();
-        await storageSet('shopdata', JSON.stringify(state));
-        render(); // refresh the screen now that real data has arrived
-      } else {
-        syncState='idle';
-        updateSyncPill();
-      }
-    });
+  // THEN always pull-and-merge from the cloud — not only when this device is
+  // empty. The old code pulled only if local storage was completely blank,
+  // which is exactly why a second device showed stale data forever and
+  // "incognito mode" appeared to fix it: incognito starts with empty storage,
+  // so the pull ran. Worse, a stale device would then push its whole state
+  // back and overwrite the newer data. mergeStates() makes the pull safe, so
+  // it can now run on every start.
+  // Runs in the BACKGROUND — Apps Script can take a few seconds to wake from
+  // a cold start, and that must never block the first screen.
+  if(CLOUD_SHEET_URL){
+    syncNow({ force: true });
+  } else {
+    firstPullDone = true; // no cloud configured — never hold pushes back
   }
+
+  // Pick up changes made on the other device when this one comes back to life:
+  // returning to the tab, or the network coming back after a dead zone.
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden && isAuthenticated) syncNow({});
+  });
+  window.addEventListener('online', ()=> { if(isAuthenticated) syncNow({ force: true }); });
 }
 
 // toast element
