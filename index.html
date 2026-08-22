@@ -514,7 +514,6 @@ const I18N = {
     customer_optional:"Customer (optional)", walkin:"Walk-in Customer", discount_pct:"Discount (%)",
     discount_rs:"Discount", new_customer:"＋ New customer (type name)", cash_received:"Cash Received", change_due:"Change to Return",
     credit_needs_customer:"For a credit sale, pick or type a customer name — otherwise the udhaar can't be tracked.",
-    print_hint:"Phone se print kar rahe hain? Print dialog me “More settings” kholein → Paper size = 58mm / 80mm (ya Roll), Margins = None, aur “Headers and footers” OFF karein. Isi se khali doosra page nahi aayega.",
     payment_label:"Payment", cash:"Cash", card:"Card", credit:"Credit",
     subtotal:"Subtotal", discount:"Discount", total:"Total", generate_receipt:"Generate Receipt",
     stock_levels:"Stock Levels", stock_levels_sub:"Adjust manually for damage, returns, restock",
@@ -586,7 +585,6 @@ const I18N = {
     customer_optional:"گاہک (اختیاری)", walkin:"عام گاہک", discount_pct:"رعایت (%)",
     discount_rs:"رعایت", new_customer:"＋ نیا گاہک (نام لکھیں)", cash_received:"موصول رقم", change_due:"واپس کرنے کی رقم",
     credit_needs_customer:"ادھار سیل کے لیے گاہک منتخب کریں یا نام لکھیں — ورنہ ادھار کا حساب نہیں رکھا جا سکے گا۔",
-    print_hint:"موبائل سے پرنٹ کر رہے ہیں؟ پرنٹ ڈائیلاگ میں “More settings” کھولیں → Paper size = 58mm / 80mm (یا Roll)، Margins = None، اور “Headers and footers” بند کریں۔ اس سے خالی دوسرا صفحہ نہیں آئے گا۔",
     payment_label:"ادائیگی کا طریقہ", cash:"نقد", card:"کارڈ", credit:"ادھار",
     subtotal:"ذیلی کل", discount:"رعایت", total:"کل رقم", generate_receipt:"رسید بنائیں",
     stock_levels:"اسٹاک کی مقدار", stock_levels_sub:"نقصان، واپسی یا نئے اسٹاک کے لیے دستی طور پر تبدیل کریں",
@@ -1892,7 +1890,7 @@ function receiptView(sale){
   <div class="slip-size-row no-print">
     <span>${t('slip_size')}:</span>
     <button data-slip="58" class="${slipWidth===58?'sel':''}">58mm</button>
-    <button data-slip="80" class="${slipWidth===80?'sel':''}">80mm</button>
+  
   </div>
   <div class="receipt-wrap">
     <div class="receipt" id="receiptPrintable" style="width:${slipWidth===58?'260px':'320px'};">
