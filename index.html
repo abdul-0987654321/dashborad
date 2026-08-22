@@ -417,6 +417,19 @@ body.lang-ur .field label{ text-align:right; }
   .login-card{ padding:26px 20px 22px 20px; border-radius:14px; }
   .login-brand .mark{ font-size:26px; }
 }
+
+/* ===== Boot loading screen (shown before app is ready) ===== */
+.boot-wrap{
+  position:fixed; inset:0; z-index:998; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; gap:14px; background:var(--paper);
+}
+.boot-wrap .mark{ font-family:'Zilla Slab',serif; font-weight:700; font-size:26px; color:var(--ink); }
+.boot-spinner{
+  width:34px; height:34px; border-radius:50%; border:3px solid var(--border); border-top-color:var(--gold);
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.boot-msg{ font-size:13px; color:var(--muted); }
 </style>
 </head>
 <body>
@@ -453,7 +466,7 @@ function getExpenseCats(){
 // This is the Apps Script Web App URL from khata-sheets-backend.gs.
 // To change it later, just edit this one line.
 // ---------------------------------------------------------------
-const CLOUD_SHEET_URL = "https://script.google.com/macros/s/AKfycbwJNIvEJYRDds2SoFMQflbft9r4O40qx84hDwTImhwUQOYYEI7nyn3HCdNcH3WHWNy4/exec";
+const CLOUD_SHEET_URL = "https://script.google.com/macros/s/AKfycbxNHi_UQJAYRCGzZBfSZBy4dPKD8gGLsRhT7bOnKif5PIymj-0kj6bfWK5Ty5dqhz0/exec";
 
 // ---------------------------------------------------------------
 // LOGIN — simple shared PIN for staff at the counter. Not high-security
@@ -772,12 +785,6 @@ function render(){
         ${navItem('reports')}
       </ul>
       <div class="sidebar-foot">
-        <div class="sync-status" id="syncStatusRow">
-          <span class="sync-dot ${syncDotClass()}"></span>
-          <span id="syncStatusText">${syncStatusLabel()}</span>
-        </div>
-        <button type="button" class="logout-btn" id="btnCloudSync" style="margin-top:10px;">${t('cloud_backup')}</button>
-        <button type="button" class="logout-btn" id="btnBackup" style="margin-top:6px;">${t('backup_restore')}</button>
         <button id="logoutBtn" class="logout-btn">${lang==='ur'?'⏻ لاگ آؤٹ':'⏻ Logout'}</button>
         <input type="file" id="restoreFileInput" accept="application/json" style="display:none;">
       </div>
@@ -812,10 +819,6 @@ function render(){
   const closeBtn = document.getElementById('sidebarClose');
   if(closeBtn) closeBtn.onclick = closeSidebar;
   document.getElementById('logoutBtn').onclick = logout;
-  const cloudBtn = document.getElementById('btnCloudSync');
-  if(cloudBtn) cloudBtn.onclick = ()=>{ closeSidebar(); openCloudSyncModal(); };
-  const backupBtn = document.getElementById('btnBackup');
-  if(backupBtn) backupBtn.onclick = ()=>{ closeSidebar(); openBackupModal(); };
   document.querySelectorAll('#langToggle [data-lang]').forEach(b=> b.onclick = ()=>{ lang = b.dataset.lang; state.settings.lang = lang; saveData(); render(); });
   renderContent();
 }
@@ -1312,173 +1315,23 @@ function expenseFormModal(){
   </div>`;
 }
 
-// ================= BACKUP (manual file, on-device) =================
-function backupModal(){
-  return `
-  <div class="modal-backdrop" id="modalBackdrop">
-    <div class="modal">
-      <div class="modal-head"><h3>${t('backup_title')}</h3><button class="modal-close" id="modalClose">×</button></div>
-      <div class="modal-body">
-        <p style="font-size:13px; color:var(--muted); margin-top:0;">${t('backup_desc')}</p>
-        <div id="backupStatus" style="font-size:13px; margin-bottom:14px; min-height:18px;"></div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn gold small" id="btnDownloadBackup">${t('backup_download')}</button>
-          <button class="btn outline small" id="btnRestoreBackup">${t('backup_restore_btn')}</button>
-        </div>
-      </div>
-      <div class="modal-foot"><button class="btn outline" id="modalCancel">${t('close')}</button></div>
-    </div>
-  </div>`;
-}
-
-function openBackupModal(){
-  openModal(backupModal());
-  const statusEl = document.getElementById('backupStatus');
-  function setStatus(msg, kind){
-    statusEl.textContent = msg;
-    statusEl.style.color = kind==='error' ? 'var(--brick)' : kind==='ok' ? 'var(--ink-light)' : 'var(--muted)';
-  }
-  document.getElementById('btnDownloadBackup').onclick = ()=>{
-    try{
-      const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `khata-backup-${todayStr()}.json`;
-      a.click();
-      setStatus(t('backup_downloaded'), 'ok');
-    }catch(e){ setStatus(t('backup_failed'), 'error'); }
-  };
-  document.getElementById('btnRestoreBackup').onclick = ()=>{
-    const fileInput = document.getElementById('restoreFileInput');
-    fileInput.value = '';
-    fileInput.onchange = ()=>{
-      const file = fileInput.files[0];
-      if(!file) return;
-      if(!confirm(t('backup_restore_confirm'))) return;
-      const reader = new FileReader();
-      reader.onload = (ev)=>{
-        try{
-          const parsed = JSON.parse(ev.target.result);
-          if(!parsed || typeof parsed !== 'object') throw new Error('bad file');
-          state = parsed;
-          if(!state.products) state.products = [];
-          if(!state.customers) state.customers = [];
-          if(!state.sales) state.sales = [];
-          if(!state.expenses) state.expenses = [];
-          if(!state.settings) state.settings = { lang };
-          saveData();
-          setStatus(t('backup_restored'), 'ok');
-          closeModal();
-          render();
-        }catch(e){
-          setStatus(t('backup_failed'), 'error');
-        }
-      };
-      reader.readAsText(file);
-    };
-    fileInput.click();
-  };
-}
-
 // ================= CLOUD SYNC (Google Sheet via Apps Script) =================
-// The URL is hardcoded at the top of this file (CLOUD_SHEET_URL) so the
-// shopkeeper never has to see or type a URL — sync just works in the background.
-
-function syncDotClass(){
-  if(syncState==='ok') return 'ok';
-  if(syncState==='busy') return 'busy';
-  if(syncState==='err') return 'err';
-  return '';
-}
-function syncStatusLabel(){
-  if(!CLOUD_SHEET_URL) return t('cloud_sync_status_idle');
-  if(syncState==='ok') return t('cloud_sync_status_ok');
-  if(syncState==='busy') return t('cloud_sync_status_busy');
-  if(syncState==='err') return t('cloud_sync_status_err');
-  return t('cloud_sync_status_idle');
-}
-function updateSyncStatusUI(){
-  const dot = document.querySelector('#syncStatusRow .sync-dot');
-  const txt = document.getElementById('syncStatusText');
-  if(dot) dot.className = 'sync-dot ' + syncDotClass();
-  if(txt) txt.textContent = syncStatusLabel();
-}
+// Runs silently in the background — no buttons, no modal, no scary "sync failed"
+// message in the sidebar. Local data (on this device) is always the source of
+// truth for what the shopkeeper sees; the cloud copy is just a background backup.
 
 let cloudSyncTimer = null;
 function scheduleCloudSync(){
   if(!CLOUD_SHEET_URL) return;
   clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = setTimeout(()=>{ pushToSheet(CLOUD_SHEET_URL).then(ok=>{
-    syncState = ok ? 'ok' : 'err';
-    if(ok){ state.settings.lastSynced = new Date().toISOString(); storageSet('shopdata', JSON.stringify(state)); }
-    updateSyncStatusUI();
-  }); }, 1500); // debounce so rapid edits (e.g. qty +/-) don't spam the network
-}
-
-function cloudSyncModal(){
-  const lastSynced = (state.settings && state.settings.lastSynced) ? new Date(state.settings.lastSynced).toLocaleString() : '—';
-  return `
-  <div class="modal-backdrop" id="modalBackdrop">
-    <div class="modal">
-      <div class="modal-head"><h3>${t('cloud_sync_title')}</h3><button class="modal-close" id="modalClose">×</button></div>
-      <div class="modal-body">
-        <p style="font-size:13px; color:var(--muted); margin-top:0;">${t('cloud_sync_desc')}</p>
-        <div style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:14px;">
-          <span class="sync-dot ${syncDotClass()}" style="width:9px; height:9px;"></span>
-          <span>${syncStatusLabel()}</span>
-        </div>
-        <div style="font-size:12.5px; color:var(--muted); margin-bottom:14px;">
-          ${t('cloud_sync_last_synced')}: <strong>${lastSynced}</strong>
-        </div>
-        <div id="cloudSyncStatus" style="font-size:13px; margin-bottom:10px; min-height:18px;"></div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn gold small" id="btnUpload">${t('cloud_sync_upload')}</button>
-          <button class="btn outline small" id="btnDownload">${t('cloud_sync_download')}</button>
-        </div>
-      </div>
-      <div class="modal-foot"><button class="btn outline" id="modalCancel">${t('close')}</button></div>
-    </div>
-  </div>`;
-}
-
-function openCloudSyncModal(){
-  openModal(cloudSyncModal());
-  const statusEl = document.getElementById('cloudSyncStatus');
-  function setStatus(msg, kind){
-    statusEl.textContent = msg;
-    statusEl.style.color = kind==='error' ? 'var(--brick)' : kind==='ok' ? 'var(--ink-light)' : 'var(--muted)';
-  }
-  document.getElementById('btnUpload').onclick = async ()=>{
-    setStatus(t('cloud_sync_uploading'));
-    syncState = 'busy'; updateSyncStatusUI();
-    const ok = await pushToSheet(CLOUD_SHEET_URL);
-    if(ok){
-      state.settings.lastSynced = new Date().toISOString();
-      await storageSet('shopdata', JSON.stringify(state));
-      syncState = 'ok'; updateSyncStatusUI();
-      setStatus(t('cloud_sync_uploaded'), 'ok');
-    } else {
-      syncState = 'err'; updateSyncStatusUI();
-      setStatus(t('cloud_sync_fail'), 'error');
-    }
-  };
-  document.getElementById('btnDownload').onclick = async ()=>{
-    if(!confirm(t('cloud_sync_download_confirm'))) return;
-    setStatus(t('cloud_sync_downloading'));
-    syncState = 'busy'; updateSyncStatusUI();
-    const ok = await pullFromSheet(CLOUD_SHEET_URL);
-    if(ok){
-      state.settings.lastSynced = new Date().toISOString();
-      await storageSet('shopdata', JSON.stringify(state));
-      syncState = 'ok'; updateSyncStatusUI();
-      setStatus(t('cloud_sync_downloaded'), 'ok');
-      closeModal();
-      render();
-    } else {
-      syncState = 'err'; updateSyncStatusUI();
-      setStatus(t('cloud_sync_fail'), 'error');
-    }
-  };
+  cloudSyncTimer = setTimeout(()=>{
+    pushToSheet(CLOUD_SHEET_URL).then(ok=>{
+      syncState = ok ? 'ok' : 'err';
+      if(ok){ state.settings.lastSynced = new Date().toISOString(); storageSet('shopdata', JSON.stringify(state)); }
+      // Intentionally no UI update here — this runs quietly in the background.
+      // If it fails, we just retry on the next save; nothing is shown to the user.
+    });
+  }, 1500); // debounce so rapid edits (e.g. qty +/-) don't spam the network
 }
 
 async function pingSheet(url){
@@ -1699,10 +1552,6 @@ function applyPrintPageSize(mode){
   }
   if(mode === 'receipt'){
     const w = slipWidth;
-    // Measure the actual rendered receipt height in px and convert to mm
-    // (96 CSS px per inch, 25.4mm per inch) — same approach as a working
-    // thermal-slip printer: this avoids the browser falling back to a full
-    // A4/Letter page with lots of blank space below a short receipt.
     const el = document.getElementById('receiptPrintable');
     const hPx = el ? el.scrollHeight : 400;
     const hMm = Math.ceil((hPx / 96) * 25.4) + 10; // +10mm safety padding
@@ -1984,28 +1833,42 @@ function bindReceiptActions(sale){
   document.getElementById('newSaleBtn').onclick = ()=>{ view='pos'; render(); };
 }
 
+// ================= BOOT SCREEN =================
+function renderBoot(msg){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="boot-wrap">
+      <div class="mark">Khata</div>
+      <div class="boot-spinner"></div>
+      <div class="boot-msg">${esc(msg)}</div>
+    </div>`;
+}
+
 // ================= INIT =================
 async function startApp(){
-  // Local read is fast — load it and render right away so the app never
-  // sits on a blank "Loading…" screen waiting on the network.
+  // Show an immediate "loading" screen instead of a blank page, so the
+  // shopkeeper always sees *something* happening the moment they log in.
+  renderBoot(lang==='ur' ? 'ڈیٹا لایا جا رہا ہے…' : 'Loading your shop…');
+
+  // Local read first — this is fast (device storage), so the real app
+  // appears within a moment even with no internet at all.
   await loadData();
   render();
 
-  // If a cloud sheet is configured and this device has no local data yet,
-  // pull whatever is already in the sheet in the BACKGROUND (first run on a
-  // new device/browser). Apps Script can take several seconds to respond
-  // (cold start), so this must never block the first paint of the app.
+  // If a cloud sheet is configured and this device has NO local data yet
+  // (first time this browser/device is used), pull from the sheet in the
+  // BACKGROUND. Google Apps Script can take a few seconds to wake up
+  // ("cold start"), so this must never block the first screen the
+  // shopkeeper sees — it just quietly fills in once it arrives.
   const isEmpty = state.products.length===0 && state.customers.length===0 && state.sales.length===0 && state.expenses.length===0;
   if(CLOUD_SHEET_URL && isEmpty){
     syncState = 'busy';
-    showToast(lang==='ur' ? 'کلاؤڈ سے ڈیٹا لایا جا رہا ہے…' : 'Fetching your data from the cloud…');
     pullFromSheet(CLOUD_SHEET_URL).then(async (ok)=>{
       if(ok){
         syncState='ok';
         state.settings.lastSynced = new Date().toISOString();
         await storageSet('shopdata', JSON.stringify(state));
         render(); // refresh the screen now that real data has arrived
-        showToast(lang==='ur' ? 'ڈیٹا لوڈ ہو گیا' : 'Data loaded');
       } else {
         syncState='idle';
       }
